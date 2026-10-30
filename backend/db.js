@@ -19,7 +19,11 @@ function getPool() {
             ssl: isLocal ? false : { rejectUnauthorized: false },
             max: process.env.VERCEL ? 1 : 10, // على Vercel كل function بتاخد اتصال واحد
             connectionTimeoutMillis: 8000,
+            idleTimeoutMillis: 10000,   // نقفل الاتصال الخامل قبل ما Neon يقفله هو
+            allowExitOnIdle: true,
         });
+        // من غير السطر ده، أي اتصال خامل Neon يقطعه بيعمل Uncaught error ويوقّع الـ function كلها
+        pool.on('error', (err) => { console.error('pg pool error:', err && err.message); pool = null; });
     }
     return pool;
 }

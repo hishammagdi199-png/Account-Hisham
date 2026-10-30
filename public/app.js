@@ -42,9 +42,14 @@ async function apiFetch(path, method, body){
     showToast('كلمة السر غلط - دوس على ⚙️ فوق وصححها');
     throw new Error('unauthorized');
   }
-  const json = await res.json().catch(()=>({}));
+  const raw = await res.text().catch(()=>'');
+  let json = {};
+  try{ json = raw ? JSON.parse(raw) : {}; }catch(e){ json = {}; }
   if(!res.ok){
-    showToast('فشل تحميل السيرفر: ' + (json.message || json.error || 'خطأ غير معروف'));
+    // لو الرد مش JSON (مثلًا صفحة خطأ من Vercel) نعرض كود الحالة وبداية الرد عشان نعرف السبب
+    const detail = json.message || json.error || ('HTTP ' + res.status + (raw ? ' — ' + raw.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,140) : ''));
+    console.error('API error', method||'GET', path, res.status, raw.slice(0,500));
+    showToast('فشل تحميل السيرفر: ' + detail);
     throw new Error(json.error || 'server error');
   }
   return json;
