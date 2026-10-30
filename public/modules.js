@@ -76,7 +76,7 @@ function dateStripInner(){
       <button class="ds-arrow" onclick="shiftWin(7)" title="الأسبوع اللي بعده">←</button>
     </div>
     <div class="ds-ctrl">
-      <input type="date" value="${selDate}" onchange="setDay(this.value)" title="اختار أي يوم">
+      <input type="date" value="${selDate}" onchange="pickDateInput(this.value)" title="اختار تاريخ (في الموردين بيعرض ٧ أيام لحد التاريخ ده)">
       <button class="${selMode === 'day' && selDate === todayStr() ? 'on' : ''}" onclick="goToday()">النهاردة</button>
       <button class="${selMode === 'week' ? 'on' : ''}" onclick="setMode('week')">كل الأسبوع</button>
       <button class="${selMode === 'all' ? 'on' : ''}" onclick="setMode('all')">الكل</button>
@@ -97,6 +97,12 @@ function setDay(d){
   if (d < addDays(winEnd, -6) || d > winEnd) winEnd = addDays(d, 3);
   afterDateChange();
 }
+function pickDateInput(d){
+  if (!d) return;
+  if (view === 'supplier' || view === 'suppliers') { selDate = d; winEnd = d; selMode = 'week'; afterDateChange(); } // ٧ أيام لحد التاريخ
+  else setDay(d);
+}
+function shiftWeek(n){ selMode = 'week'; shiftWin(n); }
 function setMode(m){ selMode = m; afterDateChange(); }
 function goToday(){ selDate = todayStr(); winEnd = todayStr(); selMode = 'day'; afterDateChange(); }
 function shiftWin(n){ winEnd = addDays(winEnd, n); if (selMode === 'day') selDate = addDays(selDate, n); afterDateChange(); }
@@ -220,6 +226,7 @@ function renderToday(){
   app.innerHTML = `
   <header class="top"><h1>تحصيل اليوم</h1><p>كل الفلوس اللي اتحصّلت من العملاء — اختار اليوم من الشريط اللي تحت</p></header>
   ${navHtml('today')}
+  ${exportBar('exportToday')}
   <div class="receipt">
     <div class="balance-row">
       <div class="balance-main">
@@ -238,7 +245,7 @@ function renderToday(){
     <div class="f-grid">
       <div><label>العميل</label>
         <select id="tClient">${state.clients.map(c => `<option value="${c.id}">${esc(c.name)} — ${fmt(Math.abs(clientBalance(c)))} ج ${clientBalance(c) > 0 ? 'عليه' : ''}</option>`).join('')}</select></div>
-      <div><label>المبلغ</label><input type="number" id="tAmount" placeholder="ج" min="0"></div>
+      <div><label>المبلغ</label><input type="text" inputmode="decimal" autocomplete="off" id="tAmount" placeholder="ج"></div>
       <div><label>ملاحظة</label><input type="text" id="tNote" placeholder="اختياري"></div>
       <div><label>&nbsp;</label><button class="btn btn-credit" onclick="addQuickPayment()">تسجيل</button></div>
     </div>
@@ -252,10 +259,11 @@ function renderToday(){
         <div>
           <a class="lnk" onclick="openClient('${x.client.id}')">${esc(x.client.name)}</a>
           <span style="margin-right:8px;color:var(--ink-soft);font-size:12px;">${multi ? fmtDateTime(x.p.date) : fmtTime(x.p.date)}</span>
-          ${x.p.note ? `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(x.p.note)}</div>` : ''}
+          ${x.p.note ? `<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(x.p.note)}</div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
           <span class="amt-minus">${fmt(x.p.amount)} ج</span>
+          <button class="edit-btn" onclick="editClientPayment('${x.client.id}','${x.p.id}')" title="تعديل">✎</button>
           <button class="del-btn" onclick="deleteTodayPayment('${x.client.id}','${x.p.id}')">✕</button>
         </div>
       </div>`).join('') : '<div class="empty">مفيش تحصيل في الفترة دي</div>'}
@@ -272,7 +280,7 @@ function renderToday(){
 }
 async function addQuickPayment(){
   const clientId = document.getElementById('tClient').value;
-  const amount = parseFloat(document.getElementById('tAmount').value) || 0;
+  const amount = num(document.getElementById('tAmount').value) || 0;
   const note = document.getElementById('tNote').value;
   if (!clientId) { showToast('اختار عميل'); return; }
   if (amount <= 0) { showToast('اكتب مبلغ صحيح'); return; }
@@ -334,8 +342,8 @@ function supInvoiceCard(s, t, showSupplier){
       <span>الربح: <b>${fmt(c.profit)} ج</b></span>
       <span>نسبة الربح: ${pctHtml(c.pct)}</span>
     </div>` : `<div style="font-size:13.5px;">${esc(t.note) || '—'} <b style="margin-right:8px;">${fmt(t.amount)} ج</b></div>`}
-    ${items.length && t.note ? `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(t.note)}</div>` : ''}
-    <div style="text-align:left;margin-top:4px;"><button class="del-btn" onclick="deleteSupplierTxn('${s.id}','${t.id}')">حذف ✕</button></div>
+    ${items.length && t.note ? `<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(t.note)}</div>` : ''}
+    <div style="text-align:left;margin-top:4px;"><button class="edit-btn" onclick="editSupplierTxn('${s.id}','${t.id}')">تعديل ✎</button> <button class="del-btn" onclick="deleteSupplierTxn('${s.id}','${t.id}')">حذف ✕</button></div>
   </div>`;
 }
 function renderSuppliers(){
@@ -348,6 +356,7 @@ function renderSuppliers(){
   app.innerHTML = `
   <header class="top"><h1>حساب الموردين</h1><p>فواتير البضاعة اللي بتاخدها منهم والفلوس اللي بتدفعها لهم</p></header>
   ${navHtml('suppliers')}
+  ${exportBar('exportSuppliersAll')}
   <div class="receipt">
     <div class="balance-row">
       <div class="balance-main">
@@ -401,7 +410,7 @@ async function deleteSupplier(id){
     render();
   } catch (e) {}
 }
-function openSupplier(id){ currentSupplierId = id; view = 'supplier'; supDraft = []; supDraftNote = ''; searchQ = ''; render(); }
+function openSupplier(id){ currentSupplierId = id; view = 'supplier'; supDraft = []; supDraftNote = ''; searchQ = ''; if (selMode !== 'week') selMode = 'week'; render(); }
 async function renameSupplier(id, value){
   const s = getSupplier(id); if (!s) return;
   const name = value.trim() || s.name;
@@ -421,6 +430,7 @@ function renderSupplierView(){
     <h1 style="font-size:26px;" contenteditable="true" onblur="renameSupplier('${s.id}', this.textContent)">${esc(s.name)}</h1>
   </header>
   ${navHtml('supplier')}
+  ${exportBar('exportSupplier', s.id)}
   <div class="receipt">
     <div class="balance-row">
       <div class="balance-main">
@@ -440,8 +450,8 @@ function renderSupplierView(){
     <div class="f-grid">
       <div class="wide"><label>الصنف (من الأصناف اللي ضفتها في الرئيسية)</label>
         <select id="sdProduct" onchange="onSupProductChange()">${state.products.map(p => `<option value="${p.id}">${esc(p.name)} — بيع ${fmt(p.price)} ج</option>`).join('')}</select></div>
-      <div><label>الكمية</label><input type="number" id="sdQty" value="1" min="0" step="any" oninput="updateSupPreview()"></div>
-      <div><label>سعر الشراء للوحدة</label><input type="number" id="sdCost" placeholder="ج" min="0" step="any" oninput="updateSupPreview()"></div>
+      <div><label>الكمية</label><input type="text" inputmode="decimal" autocomplete="off" id="sdQty" placeholder="الكمية (فاضية = 1)" oninput="updateSupPreview()"></div>
+      <div><label>سعر الشراء للوحدة</label><input type="text" inputmode="decimal" autocomplete="off" id="sdCost" placeholder="ج" oninput="updateSupPreview()"></div>
       <div><label>&nbsp;</label><button class="btn btn-outline" onclick="addSupDraft()">+ إضافة للفاتورة</button></div>
     </div>
     <div id="sdPreview" class="stage-note"></div>` : '<div class="empty">ضيف أصناف الأول من الصفحة الرئيسية (الأصناف والأسعار)</div>'}
@@ -451,7 +461,7 @@ function renderSupplierView(){
   <div class="card">
     <h2>دفعت للمورد فلوس</h2>
     <div class="f-grid">
-      <div><label>المبلغ</label><input type="number" id="pAmount" placeholder="ج" min="0"></div>
+      <div><label>المبلغ</label><input type="text" inputmode="decimal" autocomplete="off" id="pAmount" placeholder="ج"></div>
       <div class="wide"><label>ملاحظة</label><input type="text" id="pNote" placeholder="اختياري"></div>
       <div><label>&nbsp;</label><button class="btn btn-credit" onclick="addSupplierPayment()">تسجيل الدفعة</button></div>
     </div>
@@ -468,28 +478,36 @@ function renderSupplierView(){
 }
 function onSupProductChange(){
   const sel = document.getElementById('sdProduct'); if (!sel) return;
-  document.getElementById('sdCost').value = lastCostFor(sel.value);
+  const last = lastCostFor(sel.value);
+  const cost = document.getElementById('sdCost');
+  cost.value = '';
+  cost.placeholder = last !== '' ? ('سعر الشراء — آخر مرة ' + fmt(last)) : 'سعر الشراء للوحدة';
   updateSupPreview();
 }
 function updateSupPreview(){
   const el = document.getElementById('sdPreview'); if (!el) return;
   const p = state.products.find(x => x.id === document.getElementById('sdProduct').value); if (!p) { el.innerHTML = ''; return; }
-  const qty = parseFloat(document.getElementById('sdQty').value) || 0;
-  const cost = parseFloat(document.getElementById('sdCost').value) || 0;
+  const qRaw = num(document.getElementById('sdQty').value);
+  const qty = isNaN(qRaw) ? 1 : qRaw;
+  const cRaw = num(document.getElementById('sdCost').value);
+  const cost = isNaN(cRaw) ? (lastCostFor(p.id) || 0) : cRaw;
   if (!cost) { el.innerHTML = `سعر البيع: ${fmt(p.price)} ج — اكتب سعر الشراء علشان تشوف نسبة الربح.`; return; }
   const pct = Math.round((p.price - cost) / cost * 1000) / 10;
   el.innerHTML = `سعر البيع ${fmt(p.price)} ج • ربح الوحدة ${fmt(p.price - cost)} ج (${pctHtml(pct)}) • إجمالي السطر ${fmt(qty * cost)} ج`;
 }
 function addSupDraft(){
   const productId = document.getElementById('sdProduct').value;
-  const quantity = parseFloat(document.getElementById('sdQty').value) || 0;
-  const unitCost = parseFloat(document.getElementById('sdCost').value) || 0;
   const p = state.products.find(x => x.id === productId);
+  const qRaw = num(document.getElementById('sdQty').value);
+  const quantity = isNaN(qRaw) ? 1 : qRaw;                       // فاضية = 1
+  const cRaw = num(document.getElementById('sdCost').value);
+  const unitCost = isNaN(cRaw) ? (lastCostFor(productId) || 0) : cRaw;   // فاضية = آخر سعر شراء
   if (!p) { showToast('اختار صنف'); return; }
   if (quantity <= 0) { showToast('اكتب الكمية'); return; }
   if (unitCost <= 0) { showToast('اكتب سعر الشراء'); return; }
   supDraft.push({id: newId(), productId, productName: p.name, quantity, unitCost, sellPrice: p.price});
-  document.getElementById('sdQty').value = 1;
+  document.getElementById('sdQty').value = '';
+  onSupProductChange();
   renderSupDraft();
 }
 function removeSupDraft(id){ supDraft = supDraft.filter(d => d.id !== id); renderSupDraft(); }
@@ -529,7 +547,7 @@ async function saveSupInvoice(){
 }
 async function addSupplierPayment(){
   const s = getSupplier(currentSupplierId); if (!s) return;
-  const amount = parseFloat(document.getElementById('pAmount').value) || 0;
+  const amount = num(document.getElementById('pAmount').value) || 0;
   const note = document.getElementById('pNote').value;
   if (amount <= 0) { showToast('اكتب مبلغ صحيح'); return; }
   const fromCash = document.getElementById('pFromCash').checked;
@@ -547,13 +565,15 @@ function renderSupplierHistory(){
   const goodsInRange = txns.filter(t => t.kind === 'goods');
   const c = invCalc(goodsInRange.flatMap(t => t.items || []));
   box.innerHTML = `
-    <div class="stage-note" style="margin:0 0 10px;">المعروض: <b>${rangeLabel()}</b> — لو عايز كل السجل اضغط <a class="lnk" onclick="setMode('all')">الكل</a>
+    <div class="stage-note" style="margin:0 0 10px;">المعروض: <b>${rangeLabel()}</b> —
+      <a class="lnk" onclick="shiftWeek(-7)">→ ٧ أيام أقدم</a> • <a class="lnk" onclick="shiftWeek(7)">٧ أيام أحدث ←</a>
       ${goodsInRange.some(t => t.items) ? ` • ربح فواتير الفترة: ${fmt(c.profit)} ج (${pctHtml(c.pct)})` : ''}</div>
     ${txns.length ? txns.map(t => t.kind === 'goods' ? supInvoiceCard(s, t, false) : `
       <div class="payment-line">
         <div><span class="tag payment">دفعة</span> <span style="margin-right:8px;color:var(--ink-soft);font-size:12px;">${fmtDateTime(t.date)}</span>
-          <div style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(t.note)}${t.fromCash ? '' : ' (من برّه الخزنة)'}</div></div>
+          <div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(t.note)}${t.fromCash ? '' : ' (من برّه الخزنة)'}</div></div>
         <div style="display:flex;align-items:center;gap:10px;"><span class="amt-minus">- ${fmt(t.amount)} ج</span>
+          <button class="edit-btn" onclick="editSupplierTxn('${s.id}','${t.id}')" title="تعديل">✎</button>
           <button class="del-btn" onclick="deleteSupplierTxn('${s.id}','${t.id}')">✕</button></div>
       </div>`).join('') : '<div class="empty">مفيش حاجة في الفترة دي</div>'}`;
 }
@@ -595,6 +615,7 @@ function renderCash(){
   app.innerHTML = `
   <header class="top"><h1>الخزنة</h1><p>الفلوس اللي معاك — الداخل من التحصيل والخارج للموردين والمصروفات</p></header>
   ${navHtml('cash')}
+  ${exportBar('exportCash')}
   <div class="receipt">
     <div class="balance-row">
       <div class="balance-main">
@@ -615,7 +636,7 @@ function renderCash(){
       <button class="${cashType === 'in' ? 'on in' : ''}" onclick="cashType='in';renderCash()">⬇️ إيداع (داخل)</button>
     </div>
     <div class="f-grid">
-      <div><label>المبلغ</label><input type="number" id="cAmount" placeholder="ج" min="0"></div>
+      <div><label>المبلغ</label><input type="text" inputmode="decimal" autocomplete="off" id="cAmount" placeholder="ج"></div>
       <div><label>${cashType === 'out' ? 'صرفتها فين / لمين' : 'جت من مين'}</label><input type="text" id="cPayee" placeholder="${cashType === 'out' ? 'مثال: محطة بنزين، عامل، صاحب المحل' : 'مثال: رصيد افتتاحي'}"></div>
       <div><label>${cashType === 'out' ? 'على إيه / السبب' : 'السبب'}</label><input type="text" id="cReason" list="reasonList" placeholder="مثال: بنزين، إيجار، عمالة"></div>
       <div><label>&nbsp;</label><button class="btn ${cashType === 'out' ? 'btn-cheese' : 'btn-credit'}" onclick="addCashEntry()">تسجيل</button></div>
@@ -633,17 +654,17 @@ function renderCash(){
           <span class="tag ${m.dir === 'in' ? 'payment' : 'item'}">${m.dir === 'in' ? 'داخل' : 'خارج'}</span>
           <b style="margin-right:6px;">${esc(m.label)}</b>
           <span style="color:var(--ink-soft);font-size:12px;">${fmtDateTime(m.date)}${m.src !== 'manual' ? ' • تلقائي' : ''}</span>
-          ${m.detail ? `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(m.detail)}</div>` : ''}
+          ${m.detail ? `<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(m.detail)}</div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
           <span class="${m.dir === 'in' ? 'amt-minus' : 'amt-plus'}">${m.dir === 'in' ? '+' : '-'} ${fmt(m.amount)} ج</span>
-          ${m.src === 'manual' ? `<button class="del-btn" onclick="deleteCashEntry('${m.id}')">✕</button>` : ''}
+          ${m.src === 'manual' ? `<button class="edit-btn" onclick="editCashEntry('${m.id}')" title="تعديل">✎</button><button class="del-btn" onclick="deleteCashEntry('${m.id}')">✕</button>` : ''}
         </div>
       </div>`).join('') : '<div class="empty">مفيش حركات في الفترة دي</div>'}
   </div>`;
 }
 async function addCashEntry(){
-  const amount = parseFloat(document.getElementById('cAmount').value) || 0;
+  const amount = num(document.getElementById('cAmount').value) || 0;
   const payee = document.getElementById('cPayee').value;
   const reason = document.getElementById('cReason').value;
   if (amount <= 0) { showToast('اكتب مبلغ صحيح'); return; }

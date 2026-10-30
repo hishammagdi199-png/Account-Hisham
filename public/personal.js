@@ -24,6 +24,7 @@ function renderPersonal(){
   app.innerHTML = `
   <header class="top"><h1>حسابي الشخصي</h1><p>فلوسي أنا — منفصلة تمامًا عن الخزنة وحسابات الشغل</p></header>
   ${navHtml('personal')}
+  ${exportBar('exportPersonal')}
   <div class="receipt">
     <div class="balance-row">
       <div class="balance-main">
@@ -45,7 +46,7 @@ function renderPersonal(){
       <button class="${!isOut ? 'on in' : ''}" onclick="personalType='in';renderPersonal()">⬇️ إيداع (فلوس دخلت)</button>
     </div>
     <div class="f-grid">
-      <div><label>المبلغ</label><input type="number" id="pvAmount" placeholder="ج" min="0" step="any"></div>
+      <div><label>المبلغ</label><input type="text" inputmode="decimal" autocomplete="off" id="pvAmount" placeholder="ج"></div>
       <div><label>${isOut ? 'صرفتها فين / لمين' : 'جت منين'}</label><input type="text" id="pvParty" placeholder="${isOut ? 'اختياري: مطعم، محل، فلان' : 'مثال: مرتب، أرباح الشغل، هدية'}"></div>
       <div><label>التصنيف</label><input type="text" id="pvCategory" list="pvCats" placeholder="${isOut ? 'مثال: أكل، مواصلات' : 'مثال: دخل'}"></div>
       <div><label>&nbsp;</label><button class="btn ${isOut ? 'btn-cheese' : 'btn-credit'}" onclick="addPersonalEntry()">تسجيل</button></div>
@@ -82,17 +83,18 @@ function renderPersonalList(){
           <b style="margin-right:6px;">${esc(e.party) || (e.type === 'in' ? 'إيداع' : 'مصروف')}</b>
           ${e.category ? `<span class="chip" style="padding:2px 9px;font-size:11.5px;">${esc(e.category)}</span>` : ''}
           <span style="color:var(--ink-soft);font-size:12px;margin-right:6px;">${fmtDateTime(e.date)}</span>
-          ${e.note ? `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">📝 ${esc(e.note)}</div>` : ''}
+          ${e.note ? `<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">📝 ${esc(e.note)}</div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
           <span class="${e.type === 'in' ? 'amt-minus' : 'amt-plus'}">${e.type === 'in' ? '+' : '-'} ${fmt(e.amount)} ج</span>
+          <button class="edit-btn" onclick="editPersonalEntry('${e.id}')" title="تعديل">✎</button>
           <button class="del-btn" onclick="deletePersonalEntry('${e.id}')">✕</button>
         </div>
       </div>`).join('') : `<div class="empty">${q ? 'مفيش نتايج للبحث ده في الفترة المعروضة' : 'مفيش حركات في الفترة دي'}</div>`}`;
 }
 
 async function addPersonalEntry(){
-  const amount = parseFloat(document.getElementById('pvAmount').value) || 0;
+  const amount = num(document.getElementById('pvAmount').value) || 0;
   const party = document.getElementById('pvParty').value;
   const category = document.getElementById('pvCategory').value;
   const note = document.getElementById('pvNote').value;

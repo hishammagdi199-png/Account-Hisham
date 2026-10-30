@@ -89,6 +89,10 @@ async function route(method, segments, body, pin) {
             await db.deletePayment(segments[1]);
             return { status: 200, body: { ok: true } };
         }
+        if (segments[0] === 'payments' && method === 'PUT' && segments.length === 2) {
+            const payment = await db.updatePayment(segments[1], body || {});
+            return { status: 200, body: { payment } };
+        }
 
         // SUPPLIERS
         if (segments[0] === 'suppliers') {
@@ -109,6 +113,10 @@ async function route(method, segments, body, pin) {
                 return { status: 200, body: { txn } };
             }
         }
+        if (segments[0] === 'supplier-txns' && method === 'PUT' && segments.length === 2) {
+            const txn = await db.updateSupplierTxn(segments[1], body || {});
+            return { status: 200, body: { txn } };
+        }
         if (segments[0] === 'supplier-txns' && method === 'DELETE' && segments.length === 2) {
             await db.deleteSupplierTxn(segments[1]);
             return { status: 200, body: { ok: true } };
@@ -118,6 +126,10 @@ async function route(method, segments, body, pin) {
         if (segments[0] === 'cash') {
             if (method === 'POST' && segments.length === 1) {
                 const entry = await db.createCashEntry(body || {});
+                return { status: 200, body: { entry } };
+            }
+            if (method === 'PUT' && segments.length === 2) {
+                const entry = await db.updateCashEntry(segments[1], body || {});
                 return { status: 200, body: { entry } };
             }
             if (method === 'DELETE' && segments.length === 2) {
@@ -130,6 +142,10 @@ async function route(method, segments, body, pin) {
         if (segments[0] === 'personal') {
             if (method === 'POST' && segments.length === 1) {
                 const entry = await db.createPersonalEntry(body || {});
+                return { status: 200, body: { entry } };
+            }
+            if (method === 'PUT' && segments.length === 2) {
+                const entry = await db.updatePersonalEntry(segments[1], body || {});
                 return { status: 200, body: { entry } };
             }
             if (method === 'DELETE' && segments.length === 2) {

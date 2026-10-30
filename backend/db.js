@@ -399,6 +399,63 @@ async function deletePersonalEntry(id) {
     await getPool().query('DELETE FROM personal_entries WHERE id=$1', [id]);
 }
 
+/* ---------------- تعديل البيانات (البيان / المبلغ / التاريخ) ---------------- */
+// بيبني UPDATE ديناميكي من الحقول اللي اتبعتت بس
+async function updateRow(table, id, sets) {
+    await ensureSchema();
+    const cols = Object.keys(sets);
+    if (!cols.length) throw new Error('مفيش حاجة تتعدل');
+    const vals = cols.map((c) => sets[c]);
+    const q = `UPDATE ${table} SET ${cols.map((c, i) => `${c}=$${i + 1}`).join(', ')} WHERE id=$${cols.length + 1} RETURNING *`;
+    const r = await getPool().query(q, [...vals, id]);
+    if (!r.rows[0]) throw new Error('العنصر مش موجود');
+    return r.rows[0];
+}
+function checkAmount(amount) {
+    const amt = numOr0(amount);
+    if (amt <= 0) throw new Error('المبلغ لازم يكون أكبر من صفر');
+    return amt;
+}
+async function updatePayment(id, { amount, note, date }) {
+    const sets = {};
+    if (amount !== undefined) sets.amount = checkAmount(amount);
+    if (note !== undefined) sets.note = String(note);
+    if (date) sets.date = pickDate(date).toISOString();
+    const r = await updateRow('payments', id, sets);
+    return { id: r.id, date: new Date(r.date).toISOString(), amount: numOr0(r.amount), note: r.note || '' };
+}
+async function updateSupplierTxn(id, { amount, note, fromCash, date }) {
+    await ensureSchema();
+    const cur = await getPool().query('SELECT * FROM supplier_txns WHERE id=$1', [id]);
+    if (!cur.rows[0]) throw new Error('العنصر مش موجود');
+    const sets = {};
+    // فاتورة البضاعة اللي فيها أصناف مبلغها بيتحسب من الأصناف، فمنعدّلوش
+    if (amount !== undefined && !(cur.rows[0].kind === 'goods' && cur.rows[0].items)) sets.amount = checkAmount(amount);
+    if (note !== undefined) sets.note = String(note);
+    if (fromCash !== undefined && cur.rows[0].kind === 'payment') sets.from_cash = !!fromCash;
+    if (date) sets.date = pickDate(date).toISOString();
+    return mapTxn(await updateRow('supplier_txns', id, sets));
+}
+async function updateCashEntry(id, { type, amount, payee, reason, date }) {
+    const sets = {};
+    if (type !== undefined) { if (type !== 'in' && type !== 'out') throw new Error('نوع الحركة غير صحيح'); sets.type = type; }
+    if (amount !== undefined) sets.amount = checkAmount(amount);
+    if (payee !== undefined) sets.payee = String(payee).trim();
+    if (reason !== undefined) sets.reason = String(reason).trim();
+    if (date) sets.date = pickDate(date).toISOString();
+    return mapCash(await updateRow('cash_entries', id, sets));
+}
+async function updatePersonalEntry(id, { type, amount, party, category, note, date }) {
+    const sets = {};
+    if (type !== undefined) { if (type !== 'in' && type !== 'out') throw new Error('نوع الحركة غير صحيح'); sets.type = type; }
+    if (amount !== undefined) sets.amount = checkAmount(amount);
+    if (party !== undefined) sets.party = String(party).trim();
+    if (category !== undefined) sets.category = String(category).trim();
+    if (note !== undefined) sets.note = String(note).trim();
+    if (date) sets.date = pickDate(date).toISOString();
+    return mapPersonal(await updateRow('personal_entries', id, sets));
+}
+
 /* ---------------- full state (for initial page load) ---------------- */
 async function getFullState() {
     await ensureSchema();
@@ -494,6 +551,10 @@ module.exports = {
     deleteCashEntry,
     createPersonalEntry,
     deletePersonalEntry,
+    updatePayment,
+    updateSupplierTxn,
+    updateCashEntry,
+    updatePersonalEntry,
     getFullState,
     resetAll,
 };
