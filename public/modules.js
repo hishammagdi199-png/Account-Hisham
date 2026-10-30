@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 /* ===== تحصيل اليوم + الموردين + الخزنة + البحث + شريط الأسبوع ===== */
 let currentSupplierId = null;
 let cashType = 'out';          // out | in
@@ -220,85 +219,16 @@ function renderToday(){
     <div class="balance-row">
       <div class="balance-main">
         <div class="label">إجمالي التحصيل — ${rangeLabel()}</div>
-=======
-/* ===== تحصيل اليوم + الموردين + الخزنة ===== */
-let currentSupplierId = null;
-let todayDate = null;          // 'YYYY-MM-DD'
-let cashPeriod = 'today';      // today | week | month | all
-let cashType = 'out';          // out | in
-
-const pad2 = (n) => String(n).padStart(2, '0');
-function localDateStr(d){ const x = new Date(d); return x.getFullYear() + '-' + pad2(x.getMonth()+1) + '-' + pad2(x.getDate()); }
-function fmtTime(d){ return new Date(d).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'}); }
-function fmtDateTime(d){ return new Date(d).toLocaleDateString('ar-EG') + ' ' + fmtTime(d); }
-function sumBy(arr, f){ return arr.reduce((s, x) => s + f(x), 0); }
-
-function navHtml(active){
-  const tabs = [
-    ['home', '🏠 الرئيسية'],
-    ['today', '💰 تحصيل اليوم'],
-    ['suppliers', '🚚 الموردين'],
-    ['cash', '🏦 الخزنة'],
-  ];
-  const activeKey = active === 'supplier' ? 'suppliers' : active;
-  return '<nav class="nav">' + tabs.map(([k, label]) =>
-    `<button class="${k === activeKey ? 'on' : ''}" onclick="goView('${k}')">${label}</button>`).join('') + '</nav>';
-}
-function goView(v){
-  view = v; currentClientId = null; currentSupplierId = null; staged = []; draftItems = [];
-  render();
-}
-
-/* ================= تحصيل اليوم ================= */
-function renderToday(){
-  const app = document.getElementById('app');
-  if (!todayDate) todayDate = localDateStr(new Date());
-  const isToday = todayDate === localDateStr(new Date());
-
-  const pays = [];
-  state.clients.forEach(c => c.payments.forEach(p => { if (localDateStr(p.date) === todayDate) pays.push({client: c, p}); }));
-  pays.sort((a, b) => new Date(b.p.date) - new Date(a.p.date));
-  const total = sumBy(pays, x => x.p.amount);
-  const sales = sumBy(state.clients, c => sumBy(c.invoices.filter(i => localDateStr(i.date) === todayDate), i => i.total));
-
-  const paidIds = new Set(pays.map(x => x.client.id));
-  const notPaid = state.clients.filter(c => clientBalance(c) > 0 && !paidIds.has(c.id))
-    .sort((a, b) => clientBalance(b) - clientBalance(a));
-
-  app.innerHTML = `
-  <header class="top"><h1>تحصيل اليوم</h1><p>كل الفلوس اللي اتحصّلت من العملاء في اليوم</p></header>
-  ${navHtml('today')}
-
-  <div class="receipt">
-    <div class="balance-row">
-      <div class="balance-main">
-        <div class="label">إجمالي التحصيل ${isToday ? 'النهاردة' : 'في ' + new Date(todayDate + 'T00:00').toLocaleDateString('ar-EG')}</div>
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
         <div class="amount credit">${fmt(total)} ج</div>
       </div>
       <div class="mini-stats">
         <div><div class="n">${pays.length}</div><div class="l">عدد الدفعات</div></div>
-<<<<<<< HEAD
         <div><div class="n" style="color:var(--debit)">${fmt(sales)}</div><div class="l">مبيعات الفترة</div></div>
-=======
-        <div><div class="n" style="color:var(--debit)">${fmt(sales)}</div><div class="l">مبيعات اليوم</div></div>
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
       </div>
     </div>
   </div>
 
   <div class="card">
-<<<<<<< HEAD
-=======
-    <h2>اختيار اليوم</h2>
-    <div class="f-grid">
-      <div><label>التاريخ</label><input type="date" value="${todayDate}" onchange="todayDate=this.value||localDateStr(new Date());renderToday()"></div>
-      <div><label>&nbsp;</label><button class="btn btn-ghost" onclick="todayDate=localDateStr(new Date());renderToday()">النهاردة</button></div>
-    </div>
-  </div>
-
-  <div class="card">
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     <h2>تسجيل تحصيل سريع</h2>
     <div class="f-grid">
       <div><label>العميل</label>
@@ -311,39 +241,23 @@ function renderToday(){
   </div>
 
   <div class="card">
-<<<<<<< HEAD
     <h2>الدفعات — ${rangeLabel()}</h2>
-=======
-    <h2>دفعات اليوم</h2>
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     ${pays.length ? pays.map(x => `
       <div class="payment-line">
         <div>
           <a class="lnk" onclick="openClient('${x.client.id}')">${esc(x.client.name)}</a>
-<<<<<<< HEAD
           <span style="margin-right:8px;color:var(--ink-soft);font-size:12px;">${multi ? fmtDateTime(x.p.date) : fmtTime(x.p.date)}</span>
-=======
-          <span style="margin-right:8px;color:var(--ink-soft);font-size:12px;">${fmtTime(x.p.date)}</span>
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
           ${x.p.note ? `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(x.p.note)}</div>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
           <span class="amt-minus">${fmt(x.p.amount)} ج</span>
           <button class="del-btn" onclick="deleteTodayPayment('${x.client.id}','${x.p.id}')">✕</button>
         </div>
-<<<<<<< HEAD
       </div>`).join('') : '<div class="empty">مفيش تحصيل في الفترة دي</div>'}
   </div>
 
   <div class="card">
     <h2>عليهم فلوس ولسه ما دفعوش في الفترة دي (${notPaid.length})</h2>
-=======
-      </div>`).join('') : '<div class="empty">مفيش تحصيل في اليوم ده</div>'}
-  </div>
-
-  <div class="card">
-    <h2>عليهم فلوس ولسه ما دفعوش ${isToday ? 'النهاردة' : 'في اليوم ده'} (${notPaid.length})</h2>
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     ${notPaid.length ? `<div class="client-list">${notPaid.map(c => `
       <div class="client-card" onclick="openClient('${c.id}')">
         <div class="client-name">${esc(c.name)}</div>
@@ -359,14 +273,8 @@ async function addQuickPayment(){
   if (amount <= 0) { showToast('اكتب مبلغ صحيح'); return; }
   const client = getClient(clientId); if (!client) return;
   try {
-<<<<<<< HEAD
     const json = await apiFetch('clients/' + clientId + '/payments', 'POST', { amount, note, date: dateForNew() });
     client.payments.push(json.payment);
-=======
-    const json = await apiFetch('clients/' + clientId + '/payments', 'POST', { amount, note });
-    client.payments.push(json.payment);
-    todayDate = localDateStr(new Date());
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     renderToday();
     showToast('اتسجل التحصيل');
   } catch (e) {}
@@ -383,7 +291,6 @@ async function deleteTodayPayment(clientId, payId){
 
 /* ================= الموردين ================= */
 function getSupplier(id){ return state.suppliers.find(s => s.id === id); }
-<<<<<<< HEAD
 function supplierBalance(s){ // الموجب = احنا مديونين للمورد
   const goods = sumBy(s.txns.filter(t => t.kind === 'goods'), t => t.amount);
   const paid = sumBy(s.txns.filter(t => t.kind === 'payment'), t => t.amount);
@@ -425,28 +332,16 @@ function supInvoiceCard(s, t, showSupplier){
     ${items.length && t.note ? `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(t.note)}</div>` : ''}
     <div style="text-align:left;margin-top:4px;"><button class="del-btn" onclick="deleteSupplierTxn('${s.id}','${t.id}')">حذف ✕</button></div>
   </div>`;
-=======
-// الموجب = احنا مديونين للمورد
-function supplierBalance(s){
-  const goods = sumBy(s.txns.filter(t => t.kind === 'goods'), t => t.amount);
-  const paid = sumBy(s.txns.filter(t => t.kind === 'payment'), t => t.amount);
-  return Math.round((goods - paid) * 100) / 100;
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
 }
 function renderSuppliers(){
   const app = document.getElementById('app');
   const totalOwed = sumBy(state.suppliers, supplierBalance);
-<<<<<<< HEAD
   const inv = [], pays = [];
   state.suppliers.forEach(s => s.txns.forEach(t => { if (inRange(t.date)) (t.kind === 'goods' ? inv : pays).push({s, t}); }));
   inv.sort((a, b) => new Date(b.t.date) - new Date(a.t.date));
   const goodsTotal = sumBy(inv, x => x.t.amount), paidTotal = sumBy(pays, x => x.t.amount);
   app.innerHTML = `
   <header class="top"><h1>حساب الموردين</h1><p>فواتير البضاعة اللي بتاخدها منهم والفلوس اللي بتدفعها لهم</p></header>
-=======
-  app.innerHTML = `
-  <header class="top"><h1>حساب الموردين</h1><p>البضاعة اللي بتاخدها منهم والفلوس اللي بتدفعها لهم</p></header>
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
   ${navHtml('suppliers')}
   <div class="receipt">
     <div class="balance-row">
@@ -454,7 +349,6 @@ function renderSuppliers(){
         <div class="label">إجمالي المطلوب للموردين</div>
         <div class="amount ${totalOwed > 0 ? 'owe' : (totalOwed < 0 ? 'credit' : 'even')}">${fmt(Math.abs(totalOwed))} ج</div>
       </div>
-<<<<<<< HEAD
       <div class="mini-stats">
         <div><div class="n" style="color:var(--debit)">${fmt(goodsTotal)}</div><div class="l">بضاعة — ${rangeLabel()}</div></div>
         <div><div class="n" style="color:var(--credit)">${fmt(paidTotal)}</div><div class="l">مدفوع — ${rangeLabel()}</div></div>
@@ -466,12 +360,6 @@ function renderSuppliers(){
     ${inv.length ? inv.map(x => supInvoiceCard(x.s, x.t, true)).join('') : '<div class="empty">مفيش فواتير في الفترة دي</div>'}
   </div>
   <div class="card">
-=======
-      <div class="mini-stats"><div><div class="n">${state.suppliers.length}</div><div class="l">عدد الموردين</div></div></div>
-    </div>
-  </div>
-  <div class="card">
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     <h2>الموردين</h2>
     <div class="client-list">
       ${state.suppliers.length ? state.suppliers.map(s => {
@@ -508,20 +396,12 @@ async function deleteSupplier(id){
     render();
   } catch (e) {}
 }
-<<<<<<< HEAD
 function openSupplier(id){ currentSupplierId = id; view = 'supplier'; supDraft = []; supDraftNote = ''; searchQ = ''; render(); }
-=======
-function openSupplier(id){ currentSupplierId = id; view = 'supplier'; render(); }
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
 async function renameSupplier(id, value){
   const s = getSupplier(id); if (!s) return;
   const name = value.trim() || s.name;
   s.name = name;
   try { await apiFetch('suppliers/' + id, 'PUT', { name }); } catch (e) {}
-<<<<<<< HEAD
-=======
-  renderSupplierView();
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
 }
 function renderSupplierView(){
   const app = document.getElementById('app');
@@ -530,19 +410,12 @@ function renderSupplierView(){
   const bal = supplierBalance(s);
   const goods = sumBy(s.txns.filter(t => t.kind === 'goods'), t => t.amount);
   const paid = sumBy(s.txns.filter(t => t.kind === 'payment'), t => t.amount);
-<<<<<<< HEAD
-=======
-  const txns = s.txns.slice().sort((a, b) => new Date(b.date) - new Date(a.date));
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
   app.innerHTML = `
   <div class="top-bar"><button class="back-btn" onclick="goView('suppliers')">→ كل الموردين</button></div>
   <header class="top" style="margin-top:6px;">
     <h1 style="font-size:26px;" contenteditable="true" onblur="renameSupplier('${s.id}', this.textContent)">${esc(s.name)}</h1>
   </header>
-<<<<<<< HEAD
   ${navHtml('supplier')}
-=======
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
   <div class="receipt">
     <div class="balance-row">
       <div class="balance-main">
@@ -557,7 +430,6 @@ function renderSupplierView(){
   </div>
 
   <div class="card">
-<<<<<<< HEAD
     <h2>فاتورة بضاعة جديدة من المورد</h2>
     ${state.products.length ? `
     <div class="f-grid">
@@ -569,14 +441,6 @@ function renderSupplierView(){
     </div>
     <div id="sdPreview" class="stage-note"></div>` : '<div class="empty">ضيف أصناف الأول من الصفحة الرئيسية (الأصناف والأسعار)</div>'}
     <div id="sdList"></div>
-=======
-    <h2>بضاعة استلمتها من المورد</h2>
-    <div class="f-grid">
-      <div class="wide"><label>البيان (نوع البضاعة / الكمية)</label><input type="text" id="gNote" placeholder="مثال: ٢٠ كرتونة جبنة ثلاجة"></div>
-      <div><label>قيمة البضاعة</label><input type="number" id="gAmount" placeholder="ج" min="0"></div>
-      <div><label>&nbsp;</label><button class="btn btn-cheese" onclick="addSupplierTxn('goods')">تسجيل البضاعة</button></div>
-    </div>
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
   </div>
 
   <div class="card">
@@ -584,18 +448,13 @@ function renderSupplierView(){
     <div class="f-grid">
       <div><label>المبلغ</label><input type="number" id="pAmount" placeholder="ج" min="0"></div>
       <div class="wide"><label>ملاحظة</label><input type="text" id="pNote" placeholder="اختياري"></div>
-<<<<<<< HEAD
       <div><label>&nbsp;</label><button class="btn btn-credit" onclick="addSupplierPayment()">تسجيل الدفعة</button></div>
-=======
-      <div><label>&nbsp;</label><button class="btn btn-credit" onclick="addSupplierTxn('payment')">تسجيل الدفعة</button></div>
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     </div>
     <label class="chk"><input type="checkbox" id="pFromCash" checked> تتخصم من الخزنة</label>
   </div>
 
   <div class="card">
     <h2>سجل المورد</h2>
-<<<<<<< HEAD
     <div id="supHistory"></div>
   </div>`;
   if (state.products.length) { onSupProductChange(); }
@@ -686,22 +545,10 @@ function renderSupplierHistory(){
     <div class="stage-note" style="margin:0 0 10px;">المعروض: <b>${rangeLabel()}</b> — لو عايز كل السجل اضغط <a class="lnk" onclick="setMode('all')">الكل</a>
       ${goodsInRange.some(t => t.items) ? ` • ربح فواتير الفترة: ${fmt(c.profit)} ج (${pctHtml(c.pct)})` : ''}</div>
     ${txns.length ? txns.map(t => t.kind === 'goods' ? supInvoiceCard(s, t, false) : `
-=======
-    ${txns.length ? txns.map(t => t.kind === 'goods' ? `
-      <div class="invoice-card">
-        <div class="invoice-head"><span class="tag item">بضاعة</span><span class="dt">${fmtDateTime(t.date)}</span></div>
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div style="font-size:13.5px;">${esc(t.note) || '—'}</div>
-          <div style="display:flex;align-items:center;gap:10px;"><span class="invoice-total">+ ${fmt(t.amount)} ج</span>
-          <button class="del-btn" onclick="deleteSupplierTxn('${t.id}')">✕</button></div>
-        </div>
-      </div>` : `
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
       <div class="payment-line">
         <div><span class="tag payment">دفعة</span> <span style="margin-right:8px;color:var(--ink-soft);font-size:12px;">${fmtDateTime(t.date)}</span>
           <div style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(t.note)}${t.fromCash ? '' : ' (من برّه الخزنة)'}</div></div>
         <div style="display:flex;align-items:center;gap:10px;"><span class="amt-minus">- ${fmt(t.amount)} ج</span>
-<<<<<<< HEAD
           <button class="del-btn" onclick="deleteSupplierTxn('${s.id}','${t.id}')">✕</button></div>
       </div>`).join('') : '<div class="empty">مفيش حاجة في الفترة دي</div>'}`;
 }
@@ -712,33 +559,6 @@ async function deleteSupplierTxn(supplierId, id){
     await apiFetch('supplier-txns/' + id, 'DELETE');
     s.txns = s.txns.filter(t => t.id !== id);
     view === 'supplier' ? renderSupplierView() : render();
-=======
-          <button class="del-btn" onclick="deleteSupplierTxn('${t.id}')">✕</button></div>
-      </div>`).join('') : '<div class="empty">لسه مفيش بضاعة أو دفعات</div>'}
-  </div>`;
-}
-async function addSupplierTxn(kind){
-  const s = getSupplier(currentSupplierId); if (!s) return;
-  const isGoods = kind === 'goods';
-  const amount = parseFloat(document.getElementById(isGoods ? 'gAmount' : 'pAmount').value) || 0;
-  const note = document.getElementById(isGoods ? 'gNote' : 'pNote').value;
-  if (amount <= 0) { showToast('اكتب مبلغ صحيح'); return; }
-  const fromCash = isGoods ? false : document.getElementById('pFromCash').checked;
-  try {
-    const json = await apiFetch('suppliers/' + s.id + '/txns', 'POST', { kind, amount, note, fromCash });
-    s.txns.push(json.txn);
-    renderSupplierView();
-    showToast(isGoods ? 'اتسجلت البضاعة' : 'اتسجلت الدفعة');
-  } catch (e) {}
-}
-async function deleteSupplierTxn(id){
-  if (!confirm('حذف العملية دي؟')) return;
-  const s = getSupplier(currentSupplierId); if (!s) return;
-  try {
-    await apiFetch('supplier-txns/' + id, 'DELETE');
-    s.txns = s.txns.filter(t => t.id !== id);
-    renderSupplierView();
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
   } catch (e) {}
 }
 
@@ -746,41 +566,20 @@ async function deleteSupplierTxn(id){
 function cashMovements(){
   const list = [];
   state.clients.forEach(c => c.payments.forEach(p => list.push({
-<<<<<<< HEAD
     id: p.id, date: p.date, dir: 'in', amount: p.amount, src: 'client', label: 'تحصيل من ' + c.name, detail: p.note || '' })));
   state.suppliers.forEach(s => s.txns.forEach(t => {
     if (t.kind === 'payment' && t.fromCash) list.push({
       id: t.id, date: t.date, dir: 'out', amount: t.amount, src: 'supplier', label: 'دفعة للمورد ' + s.name, detail: t.note || '' });
-=======
-    id: p.id, date: p.date, dir: 'in', amount: p.amount, src: 'client',
-    label: 'تحصيل من ' + c.name, detail: p.note || '' })));
-  state.suppliers.forEach(s => s.txns.forEach(t => {
-    if (t.kind === 'payment' && t.fromCash) list.push({
-      id: t.id, date: t.date, dir: 'out', amount: t.amount, src: 'supplier',
-      label: 'دفعة للمورد ' + s.name, detail: t.note || '' });
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
   }));
   state.cash.forEach(e => list.push({
     id: e.id, date: e.date, dir: e.type, amount: e.amount, src: 'manual',
     label: e.payee || (e.type === 'out' ? 'صرف' : 'إيداع'), detail: e.reason || '' }));
   return list.sort((a, b) => new Date(b.date) - new Date(a.date));
 }
-<<<<<<< HEAD
-=======
-function inPeriod(d){
-  if (cashPeriod === 'all') return true;
-  const x = new Date(d), now = new Date();
-  if (cashPeriod === 'today') return localDateStr(x) === localDateStr(now);
-  if (cashPeriod === 'week') return (now - x) <= 7 * 24 * 3600 * 1000;
-  if (cashPeriod === 'month') return x.getFullYear() === now.getFullYear() && x.getMonth() === now.getMonth();
-  return true;
-}
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
 function renderCash(){
   const app = document.getElementById('app');
   const all = cashMovements();
   const balance = sumBy(all, m => m.dir === 'in' ? m.amount : -m.amount);
-<<<<<<< HEAD
   const rows = all.filter(m => inRange(m.date));
   const totIn = sumBy(rows.filter(m => m.dir === 'in'), m => m.amount);
   const totOut = sumBy(rows.filter(m => m.dir === 'out'), m => m.amount);
@@ -788,19 +587,6 @@ function renderCash(){
   rows.filter(m => m.src === 'manual' && m.dir === 'out').forEach(m => { const k = (m.detail || 'بدون سبب').trim(); byReason[k] = (byReason[k] || 0) + m.amount; });
   const reasons = Object.entries(byReason).sort((a, b) => b[1] - a[1]);
 
-=======
-  const rows = all.filter(m => inPeriod(m.date));
-  const totIn = sumBy(rows.filter(m => m.dir === 'in'), m => m.amount);
-  const totOut = sumBy(rows.filter(m => m.dir === 'out'), m => m.amount);
-
-  // مصروفات اليدوي حسب السبب
-  const byReason = {};
-  rows.filter(m => m.src === 'manual' && m.dir === 'out').forEach(m => {
-    const k = (m.detail || 'بدون سبب').trim(); byReason[k] = (byReason[k] || 0) + m.amount; });
-  const reasons = Object.entries(byReason).sort((a, b) => b[1] - a[1]);
-
-  const periodNames = {today: 'النهاردة', week: 'آخر ٧ أيام', month: 'الشهر ده', all: 'الكل'};
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
   app.innerHTML = `
   <header class="top"><h1>الخزنة</h1><p>الفلوس اللي معاك — الداخل من التحصيل والخارج للموردين والمصروفات</p></header>
   ${navHtml('cash')}
@@ -811,13 +597,8 @@ function renderCash(){
         <div class="amount ${balance > 0 ? 'credit' : (balance < 0 ? 'owe' : 'even')}">${balance < 0 ? '-' : ''}${fmt(Math.abs(balance))} ج</div>
       </div>
       <div class="mini-stats">
-<<<<<<< HEAD
         <div><div class="n" style="color:var(--credit)">${fmt(totIn)}</div><div class="l">داخل — ${rangeLabel()}</div></div>
         <div><div class="n" style="color:var(--debit)">${fmt(totOut)}</div><div class="l">خارج — ${rangeLabel()}</div></div>
-=======
-        <div><div class="n" style="color:var(--credit)">${fmt(totIn)}</div><div class="l">داخل (${periodNames[cashPeriod]})</div></div>
-        <div><div class="n" style="color:var(--debit)">${fmt(totOut)}</div><div class="l">خارج (${periodNames[cashPeriod]})</div></div>
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
       </div>
     </div>
   </div>
@@ -839,15 +620,7 @@ function renderCash(){
   </div>
 
   <div class="card">
-<<<<<<< HEAD
     <h2>الحركات — ${rangeLabel()}</h2>
-=======
-    <div class="top-bar"><h2 style="border:none;margin:0;">الحركات</h2>
-      <select style="width:auto;" onchange="cashPeriod=this.value;renderCash()">
-        ${Object.entries(periodNames).map(([k, v]) => `<option value="${k}" ${k === cashPeriod ? 'selected' : ''}>${v}</option>`).join('')}
-      </select>
-    </div>
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     ${reasons.length ? `<div class="chips">${reasons.map(([r, v]) => `<span class="chip">${esc(r)}: ${fmt(v)} ج</span>`).join('')}</div>` : ''}
     ${rows.length ? rows.map(m => `
       <div class="payment-line" style="background:${m.dir === 'in' ? '#F5FAF7' : '#FBF3EF'};">
@@ -870,11 +643,7 @@ async function addCashEntry(){
   const reason = document.getElementById('cReason').value;
   if (amount <= 0) { showToast('اكتب مبلغ صحيح'); return; }
   try {
-<<<<<<< HEAD
     const json = await apiFetch('cash', 'POST', { type: cashType, amount, payee, reason, date: dateForNew() });
-=======
-    const json = await apiFetch('cash', 'POST', { type: cashType, amount, payee, reason });
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     state.cash.push(json.entry);
     renderCash();
     showToast('اتسجلت الحركة');
