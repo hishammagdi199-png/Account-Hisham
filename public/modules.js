@@ -52,13 +52,17 @@ function dayBadge(day){
     const v = sumBy(cashMovements().filter(m => onDay(m.date)), m => m.dir === 'in' ? m.amount : -m.amount);
     return v ? {text: (v > 0 ? '+' : '') + fmt(v), cls: v > 0 ? 'good' : 'bad'} : null;
   }
+  if (view === 'personal') {
+    const v = sumBy(state.personal.filter(e => onDay(e.date)), e => e.type === 'in' ? e.amount : -e.amount);
+    return v ? {text: (v > 0 ? '+' : '') + fmt(v), cls: v > 0 ? 'good' : 'bad'} : null;
+  }
   const list = view === 'client' ? state.clients.filter(c => c.id === currentClientId) : state.clients;
   const v = sumBy(list, c => sumBy(c.payments.filter(p => onDay(p.date)), p => p.amount));
   return v ? {text: fmt(v), cls: 'good'} : null;
 }
 function dateStripInner(){
   const days = []; for (let i = 6; i >= 0; i--) days.push(addDays(winEnd, -i));
-  const note = view === 'suppliers' || view === 'supplier' ? 'بضاعة وردت' : (view === 'cash' ? 'صافي الحركة' : 'تحصيل');
+  const note = view === 'suppliers' || view === 'supplier' ? 'بضاعة وردت' : (view === 'cash' || view === 'personal' ? 'صافي الحركة' : 'تحصيل');
   return `
     <div class="ds-row">
       <button class="ds-arrow" onclick="shiftWin(-7)" title="الأسبوع اللي قبله">→</button>
@@ -99,11 +103,11 @@ function shiftWin(n){ winEnd = addDays(winEnd, n); if (selMode === 'day') selDat
 
 /* ---------- التنقل + البحث ---------- */
 function navHtml(active){
-  const tabs = [['home', '🏠 الرئيسية'], ['today', '💰 تحصيل اليوم'], ['suppliers', '🚚 الموردين'], ['cash', '🏦 الخزنة']];
+  const tabs = [['home', '🏠 الرئيسية'], ['today', '💰 تحصيل اليوم'], ['suppliers', '🚚 الموردين'], ['cash', '🏦 الخزنة'], ['personal', '👤 حسابي']];
   const activeKey = active === 'supplier' ? 'suppliers' : (active === 'client' ? 'home' : active);
   return '<nav class="nav">' + tabs.map(([k, label]) =>
     `<button class="${k === activeKey ? 'on' : ''}" onclick="goView('${k}')">${label}</button>`).join('') + '</nav>' +
-    `<input id="gSearch" class="gsearch" type="search" placeholder="🔍 ابحث: عميل، مورد، صنف، ملاحظة، مبلغ..." value="${esc(searchQ)}" oninput="onSearchInput(this.value)">` +
+    `<input id="gSearch" class="gsearch" type="search" placeholder="${view === 'personal' ? '🔍 ابحث في حسابي: جهة، تصنيف، ملاحظة، مبلغ...' : '🔍 ابحث: عميل، مورد، صنف، ملاحظة، مبلغ...'}" value="${esc(searchQ)}" oninput="onSearchInput(this.value)">` +
     dateStripHtml();
 }
 function goView(v){
@@ -178,6 +182,7 @@ function renderSearch(){
 }
 function onSearchInput(v){
   searchQ = v;
+  if (view === 'personal') { renderPersonalList(); return; } // البحث في حسابي الشخصي بيفضل جوه الصفحة بس
   if (!v.trim()) { if (view === 'search') { view = prevView; render(); } return; }
   if (view !== 'search') {
     prevView = view; view = 'search'; renderSearch();

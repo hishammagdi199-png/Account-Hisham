@@ -126,6 +126,18 @@ async function route(method, segments, body, pin) {
             }
         }
 
+        // PERSONAL (حسابي الشخصي)
+        if (segments[0] === 'personal') {
+            if (method === 'POST' && segments.length === 1) {
+                const entry = await db.createPersonalEntry(body || {});
+                return { status: 200, body: { entry } };
+            }
+            if (method === 'DELETE' && segments.length === 2) {
+                await db.deletePersonalEntry(segments[1]);
+                return { status: 200, body: { ok: true } };
+            }
+        }
+
         return { status: 404, body: { error: 'not found' } };
     } catch (e) {
         return { status: 500, body: { error: 'server error', message: String(e.message || e) } };

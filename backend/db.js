@@ -103,6 +103,15 @@ async function _ensureSchema() {
       reason      TEXT,
       date        TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS personal_entries (
+      id          TEXT PRIMARY KEY,
+      type        TEXT NOT NULL CHECK (type IN ('in','out')),
+      amount      NUMERIC(12,2) NOT NULL DEFAULT 0,
+      party       TEXT,
+      category    TEXT,
+      note        TEXT,
+      date        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE INDEX IF NOT EXISTS idx_supplier_txns_supplier_id ON supplier_txns(supplier_id);
     CREATE INDEX IF NOT EXISTS idx_invoices_client_id      ON invoices(client_id);
     CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice_id ON invoice_items(invoice_id);
@@ -364,11 +373,37 @@ async function deleteCashEntry(id) {
     await getPool().query('DELETE FROM cash_entries WHERE id=$1', [id]);
 }
 
+/* ---------------- حسابي الشخصي (منفصل تمامًا عن الخزنة) ---------------- */
+const mapPersonal = (r) => ({
+    id: r.id,
+    type: r.type,
+    amount: numOr0(r.amount),
+    party: r.party || '',
+    category: r.category || '',
+    note: r.note || '',
+    date: new Date(r.date).toISOString(),
+});
+async function createPersonalEntry({ type, amount, party, category, note, date }) {
+    await ensureSchema();
+    if (type !== 'in' && type !== 'out') throw new Error('نوع الحركة غير صحيح');
+    const amt = numOr0(amount);
+    if (amt <= 0) throw new Error('المبلغ لازم يكون أكبر من صفر');
+    const r = await getPool().query(
+        'INSERT INTO personal_entries (id, type, amount, party, category, note, date) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+        [randomUUID(), type, amt, (party || '').trim(), (category || '').trim(), (note || '').trim(), pickDate(date).toISOString()]
+    );
+    return mapPersonal(r.rows[0]);
+}
+async function deletePersonalEntry(id) {
+    await ensureSchema();
+    await getPool().query('DELETE FROM personal_entries WHERE id=$1', [id]);
+}
+
 /* ---------------- full state (for initial page load) ---------------- */
 async function getFullState() {
     await ensureSchema();
     const p = getPool();
-    const [productsR, clientsR, invoicesR, itemsR, paymentsR, suppliersR, txnsR, cashR] = await Promise.all([
+    const [productsR, clientsR, invoicesR, itemsR, paymentsR, suppliersR, txnsR, cashR, personalR] = await Promise.all([
         p.query('SELECT * FROM products ORDER BY created_at ASC'),
         p.query('SELECT * FROM clients ORDER BY created_at ASC'),
         p.query('SELECT * FROM invoices ORDER BY date ASC'),
@@ -377,6 +412,7 @@ async function getFullState() {
         p.query('SELECT * FROM suppliers ORDER BY created_at ASC'),
         p.query('SELECT * FROM supplier_txns ORDER BY date ASC'),
         p.query('SELECT * FROM cash_entries ORDER BY date ASC'),
+        p.query('SELECT * FROM personal_entries ORDER BY date ASC'),
     ]);
     const itemsByInvoice = {};
     for (const row of itemsR.rows) {
@@ -419,7 +455,8 @@ async function getFullState() {
     for (const row of txnsR.rows) (txnsBySupplier[row.supplier_id] ||= []).push(mapTxn(row));
     const suppliers = suppliersR.rows.map((x) => ({ ...mapClientBase(x), txns: txnsBySupplier[x.id] || [] }));
     const cash = cashR.rows.map(mapCash);
-    return { products, clients, suppliers, cash };
+    const personal = personalR.rows.map(mapPersonal);
+    return { products, clients, suppliers, cash, personal };
 }
 
 /* ---------------- reset ---------------- */
@@ -455,6 +492,8 @@ module.exports = {
     deleteSupplierTxn,
     createCashEntry,
     deleteCashEntry,
+    createPersonalEntry,
+    deletePersonalEntry,
     getFullState,
     resetAll,
 };

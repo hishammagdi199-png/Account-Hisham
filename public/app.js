@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'shop-data-v2';
-let state = { products: [], clients: [], suppliers: [], cash: [] };
+let state = { products: [], clients: [], suppliers: [], cash: [], personal: [] };
 let view = 'home';
 let currentClientId = null;
 let staged = [];
@@ -75,6 +75,7 @@ async function loadState(){
   }
   state.suppliers = state.suppliers || [];
   state.cash = state.cash || [];
+  state.personal = state.personal || [];
   render();
 }
 
@@ -405,6 +406,7 @@ function render(){
     case 'supplier': return renderSupplierView();
     case 'cash': return renderCash();
     case 'search': return renderSearch();
+    case 'personal': return renderPersonal();
     case 'client': return renderClientView();
     default: return renderHome();
   }
