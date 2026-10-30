@@ -14,6 +14,19 @@
 <div class="toast" id="toast"></div>
 <button onclick="setPinPrompt()" title="كلمة السر" style="position:fixed;top:14px;left:14px;width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--card);cursor:pointer;font-size:16px;box-shadow:0 1px 6px rgba(46,42,34,0.12);">⚙️</button>
 
+<script>
+// لو الصفحة فضلت "جاري التحميل" أكتر من ١٥ ثانية، اعرض سبب محتمل بدل الانتظار للأبد
+window.addEventListener('error', function(ev){ window.__lastErr = ev.message + ' (' + (ev.filename||'').split('/').pop() + ':' + ev.lineno + ')'; });
+setTimeout(function(){
+  var a = document.getElementById('app');
+  if (a && a.querySelector('.loading')) {
+    a.innerHTML = '<div class="card" style="text-align:center;"><h2>الصفحة اتأخرت في التحميل</h2>' +
+      '<p style="font-size:13px;color:#867A63;">' + (window.__lastErr ? 'خطأ في الصفحة: ' + window.__lastErr : 'مفيش خطأ ظاهر في الصفحة — غالبًا السيرفر أو الداتابيز مش بيردوا.') + '</p>' +
+      '<p style="font-size:12.5px;">جرّب تفتح: <a href="/api/ping" target="_blank">/api/ping</a> • <a href="/api/health" target="_blank">/api/health</a> • <a href="/app.js" target="_blank">/app.js</a> • <a href="/modules.js" target="_blank">/modules.js</a></p>' +
+      '<button onclick="location.reload()" style="padding:10px 18px;border:0;border-radius:5px;background:#C9962B;color:#fff;font-weight:700;cursor:pointer;">إعادة تحميل</button></div>';
+  }
+}, 15000);
+</script>
 <script src="modules.js"></script>
 <script src="app.js"></script>
 </body>

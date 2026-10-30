@@ -1,16 +1,30 @@
 // backend/router.js
-// موجّه طلبات REST واحد — نفسه بيستخدمه السيرفر المحلي (server.js)
+// موجّه طلبات REST واحد — نفسه بيستخدمه السيرفر المحلي (local-server.js)
 // ودالة Vercel (api/[...path].js)، عشان نفس السلوك بالظبط في المكانين.
 
 const db = require('./db');
 
 async function route(method, segments, body, pin) {
     const APP_PIN = process.env.APP_PIN;
+
+    // GET /api/ping — فحص إن الدالة شغالة (من غير قاعدة بيانات)
+    if (method === 'GET' && segments[0] === 'ping' && segments.length === 1) {
+        let dbHost = null;
+        try { dbHost = new URL(process.env.DATABASE_URL).host; } catch (e) {}
+        return { status: 200, body: { ok: true, node: process.version, hasDatabaseUrl: !!process.env.DATABASE_URL, dbHost, hasPin: !!APP_PIN } };
+    }
     if (APP_PIN && pin !== APP_PIN) {
         return { status: 401, body: { error: 'unauthorized' } };
     }
 
     try {
+        // GET /api/health — فحص الاتصال بقاعدة البيانات (بيرجّع رسالة الخطأ لو فشل)
+        if (method === 'GET' && segments[0] === 'health' && segments.length === 1) {
+            const started = Date.now();
+            await db.ping();
+            return { status: 200, body: { ok: true, db: 'connected', ms: Date.now() - started } };
+        }
+
         // GET /api/state
         if (method === 'GET' && segments[0] === 'state' && segments.length === 1) {
             const state = await db.getFullState();

@@ -24,11 +24,20 @@ async function apiFetch(path, method, body){
     method && method!=='GET' ? {'Content-Type':'application/json'} : {},
     getPin() ? {'x-app-pin': getPin()} : {}
   );
-  const res = await fetch('/api/' + path, {
-    method: method || 'GET',
-    headers,
-    body: body!==undefined ? JSON.stringify(body) : undefined
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), 25000); // لو السيرفر علّق ما نفضلش مستنيين للأبد
+  let res;
+  try{
+    res = await fetch('/api/' + path, {
+      method: method || 'GET',
+      headers,
+      signal: ctrl.signal,
+      body: body!==undefined ? JSON.stringify(body) : undefined
+    });
+  }catch(e){
+    showToast(e.name==='AbortError' ? 'السيرفر اتأخر في الرد (أكتر من ٢٥ ثانية)' : 'مفيش اتصال بالسيرفر');
+    throw e;
+  }finally{ clearTimeout(timer); }
   if(res.status === 401){
     showToast('كلمة السر غلط - دوس على ⚙️ فوق وصححها');
     throw new Error('unauthorized');
@@ -41,12 +50,23 @@ async function apiFetch(path, method, body){
   return json;
 }
 
+function showLoadError(e){
+  const app = document.getElementById('app');
+  app.innerHTML = `<div class="card" style="text-align:center;">
+    <h2>مش قادر أحمّل البيانات</h2>
+    <p style="color:var(--ink-soft);font-size:13.5px;">${esc((e && e.message) || 'خطأ غير معروف')}</p>
+    <p style="font-size:12.5px;color:var(--ink-soft);">افتح <a class="lnk" href="/api/ping" target="_blank">/api/ping</a> (الدالة شغالة؟) و
+    <a class="lnk" href="/api/health" target="_blank">/api/health</a> (الداتابيز متصلة؟) وابعتلي اللي بيظهر.</p>
+    <button class="btn btn-cheese" onclick="loadState()">إعادة المحاولة</button></div>`;
+}
 async function loadState(){
   try{
     const json = await apiFetch('state', 'GET');
     state = json.data && json.data.products ? json.data : { products:[], clients:[] };
   }catch(e){
-    state = { products:[], clients:[] };
+    // ما نعرضش دفتر فاضي (ممكن يتفهم إن البيانات اتمسحت) — نعرض رسالة واضحة وزرار إعادة المحاولة
+    showLoadError(e);
+    return;
   }
   state.suppliers = state.suppliers || [];
   state.cash = state.cash || [];
@@ -99,7 +119,6 @@ function extractQuantityFallback(content){
   }
   return 1;
 }
-<<<<<<< HEAD
 // السعر الافتراضي للعميل: آخر سعر اتحاسب بيه على الصنف ده، وإلا سعر الصنف الأساسي
 function priceFor(productId){
   const p = productById(productId); const base = p ? p.price : 0;
@@ -110,8 +129,6 @@ function priceFor(productId){
   }));
   return last ? last.p : base;
 }
-=======
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
 function parseMessages(text){
   const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
   const paymentKeywords = /(بعت|حولت|دفعت|ارسلت|أرسلت|استلمت)/;
@@ -128,14 +145,9 @@ function parseMessages(text){
     const product = matchProductInContent(content);
     if(product){
       const quantity = extractQuantityForProduct(content, product);
-<<<<<<< HEAD
       const unitPrice = priceFor(product.id);
       const amount = Math.round(quantity*unitPrice*100)/100;
       out.push({id:newId(), type:'item', productId:product.id, quantity, unitPrice, amount, note:content});
-=======
-      const amount = Math.round(quantity*product.price*100)/100;
-      out.push({id:newId(), type:'item', productId:product.id, quantity, unitPrice:product.price, amount, note:content});
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     } else {
       const quantity = extractQuantityFallback(content);
       out.push({id:newId(), type:'unclear', amount:0, note:content, productId:null, quantity, unitPrice:null});
@@ -218,7 +230,6 @@ function updateStagedField(id, field, value){
   if(field==='type') item.type = value;
   if(field==='productId'){
     item.productId = value || null;
-<<<<<<< HEAD
     if(item.productId){ item.unitPrice = priceFor(item.productId); item.amount = Math.round((item.quantity||1)*item.unitPrice*100)/100; }
   }
   if(field==='quantity'){
@@ -233,16 +244,6 @@ function updateStagedField(id, field, value){
     item.amount = parseFloat(value)||0;
     if(item.type==='item' && item.quantity) item.unitPrice = Math.round(item.amount/item.quantity*100)/100;
   }
-=======
-    const p = productById(item.productId);
-    if(p){ item.unitPrice = p.price; item.amount = Math.round((item.quantity||1)*p.price*100)/100; }
-  }
-  if(field==='quantity'){
-    item.quantity = value===''?1:parseFloat(value);
-    if(item.productId){ const p=productById(item.productId); if(p) item.amount = Math.round(item.quantity*p.price*100)/100; }
-  }
-  if(field==='amount') item.amount = parseFloat(value)||0;
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
 }
 async function confirmStaged(){
   const client = getClient(currentClientId); if(!client) return;
@@ -251,7 +252,6 @@ async function confirmStaged(){
   if(!items.length && !payments.length){ showToast('مفيش عناصر جاهزة للإضافة'); return; }
   try{
     if(items.length){
-<<<<<<< HEAD
       const invItems = items.map(s=>({productId:s.productId, quantity:s.quantity, unitPrice:s.unitPrice}));
       const rawText = items.map(s=>s.note).join('\n');
       const json = await apiFetch('clients/'+client.id+'/invoices', 'POST', { items: invItems, rawText, date: dateForNew() });
@@ -259,15 +259,6 @@ async function confirmStaged(){
     }
     for(const p of payments){
       const json = await apiFetch('clients/'+client.id+'/payments', 'POST', { amount: p.amount, note: p.note, date: dateForNew() });
-=======
-      const invItems = items.map(s=>({productId:s.productId, quantity:s.quantity}));
-      const rawText = items.map(s=>s.note).join('\n');
-      const json = await apiFetch('clients/'+client.id+'/invoices', 'POST', { items: invItems, rawText });
-      client.invoices.push(json.invoice);
-    }
-    for(const p of payments){
-      const json = await apiFetch('clients/'+client.id+'/payments', 'POST', { amount: p.amount, note: p.note });
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
       client.payments.push(json.payment);
     }
     staged=[];
@@ -282,7 +273,6 @@ function discardStaged(){ staged=[]; renderStaged(); }
 function addDraftItem(){
   const productId = document.getElementById('draftProduct').value;
   const qty = parseFloat(document.getElementById('draftQty').value)||1;
-<<<<<<< HEAD
   const priceRaw = document.getElementById('draftPrice').value;
   if(!productId){ showToast('اختار صنف'); return; }
   const unitPrice = priceRaw==='' ? priceFor(productId) : (parseFloat(priceRaw)||0);
@@ -303,25 +293,13 @@ function updateDraftHint(){
   el.textContent = 'السعر الأساسي للصنف: ' + fmt(p.price) + ' ج' + (last!==p.price ? ' • آخر سعر للعميل ده: ' + fmt(last) + ' ج' : '') +
     (!isNaN(cur) && cur!==p.price ? ' • السعر هنا مختلف عن الأساسي' : '') + ' — تقدر تكتب أي سعر.';
 }
-=======
-  if(!productId){ showToast('اختار صنف'); return; }
-  draftItems.push({id:newId(), productId, quantity:qty});
-  document.getElementById('draftQty').value='';
-  renderDraft();
-}
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
 function removeDraftItem(id){ draftItems = draftItems.filter(d=>d.id!==id); renderDraft(); }
 async function saveDraftInvoice(){
   if(!draftItems.length){ showToast('ضيف صنف الأول'); return; }
   const client = getClient(currentClientId); if(!client) return;
   try{
-<<<<<<< HEAD
     const invItems = draftItems.map(d=>({productId:d.productId, quantity:d.quantity, unitPrice:d.unitPrice}));
     const json = await apiFetch('clients/'+client.id+'/invoices', 'POST', { items: invItems, rawText: 'إضافة يدوية', date: dateForNew() });
-=======
-    const invItems = draftItems.map(d=>({productId:d.productId, quantity:d.quantity}));
-    const json = await apiFetch('clients/'+client.id+'/invoices', 'POST', { items: invItems, rawText: 'إضافة يدوية' });
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     client.invoices.push(json.invoice);
     draftItems=[];
     renderClientView();
@@ -336,11 +314,7 @@ async function addPayment(){
   if(amount<=0){ showToast('اكتب مبلغ صحيح'); return; }
   const client = getClient(currentClientId); if(!client) return;
   try{
-<<<<<<< HEAD
     const json = await apiFetch('clients/'+client.id+'/payments', 'POST', { amount, note, date: dateForNew() });
-=======
-    const json = await apiFetch('clients/'+client.id+'/payments', 'POST', { amount, note });
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     client.payments.push(json.payment);
     document.getElementById('payAmount').value=''; document.getElementById('payNote').value='';
     renderClientView();
@@ -425,10 +399,7 @@ function render(){
     case 'suppliers': return renderSuppliers();
     case 'supplier': return renderSupplierView();
     case 'cash': return renderCash();
-<<<<<<< HEAD
     case 'search': return renderSearch();
-=======
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     case 'client': return renderClientView();
     default: return renderHome();
   }
@@ -453,11 +424,8 @@ function renderHome(){
     </div>
   </div>
 
-<<<<<<< HEAD
   ${rangeSummaryHtml()}
 
-=======
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
   <div class="card">
     <h2>الأصناف والأسعار</h2>
     <div class="products-grid" id="productsGrid"></div>
@@ -530,10 +498,7 @@ function renderClientView(){
   <header class="top" style="margin-top:6px;">
     <h1 style="font-size:26px;" contenteditable="true" onblur="renameClient('${client.id}', this.textContent)">${esc(client.name)}</h1>
   </header>
-<<<<<<< HEAD
   ${navHtml('client')}
-=======
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
 
   <div class="receipt">
     <div class="balance-row">
@@ -564,7 +529,6 @@ function renderClientView(){
     <h2>إضافة فاتورة يدويًا</h2>
     <div class="draft-grid">
       <div><label>الصنف</label>
-<<<<<<< HEAD
         <select id="draftProduct" onchange="fillDraftPrice()">${state.products.map(p=>`<option value="${p.id}">${esc(p.name)} — ${fmt(p.price)} ج</option>`).join('')}</select>
       </div>
       <div><label>الكمية</label><input type="number" id="draftQty" value="1" min="0" step="any"></div>
@@ -572,13 +536,6 @@ function renderClientView(){
       <div><button class="btn btn-outline btn-sm" onclick="addDraftItem()">+ إضافة للفاتورة</button></div>
     </div>
     <div class="stage-note" id="draftHint"></div>
-=======
-        <select id="draftProduct">${state.products.map(p=>`<option value="${p.id}">${esc(p.name)} — ${fmt(p.price)} ج</option>`).join('')}</select>
-      </div>
-      <div><label>الكمية</label><input type="number" id="draftQty" value="1" min="1"></div>
-      <div><button class="btn btn-outline btn-sm" onclick="addDraftItem()">+ إضافة للفاتورة</button></div>
-    </div>
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     <div class="draft-list" id="draftList"></div>
   </div>
 
@@ -597,10 +554,7 @@ function renderClientView(){
   </div>
   `;
   renderStaged();
-<<<<<<< HEAD
   fillDraftPrice();
-=======
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
   renderDraft();
   renderHistory();
 }
@@ -611,11 +565,7 @@ function renderStaged(){
   area.innerHTML = `
     <div class="stage-note">راجع النتايج قبل ما تضيفها — الأصناف هتتجمع في فاتورة واحدة، والدفعات هتتسجل لوحدها:</div>
     <table>
-<<<<<<< HEAD
       <tr><th>النوع</th><th>الصنف</th><th>الكمية</th><th>سعر الوحدة</th><th>المبلغ</th><th>النص الأصلي</th></tr>
-=======
-      <tr><th>النوع</th><th>الصنف</th><th>الكمية</th><th>المبلغ</th><th>النص الأصلي</th></tr>
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
       ${staged.map(s=>`
         <tr>
           <td><select onchange="updateStagedField('${s.id}','type',this.value); renderStaged();">
@@ -628,12 +578,8 @@ function renderStaged(){
               ${state.products.map(p=>`<option value="${p.id}" ${p.id===s.productId?'selected':''}>${esc(p.name)}</option>`).join('')}
             </select>` : '—'}</td>
           <td>${s.type==='item' ? `<input class="tbl-input" type="number" value="${s.quantity??1}" onchange="updateStagedField('${s.id}','quantity',this.value); renderStaged();">` : '—'}</td>
-<<<<<<< HEAD
           <td>${s.type==='item' ? `<input class="tbl-input" type="number" step="any" value="${s.unitPrice??0}" onchange="updateStagedField('${s.id}','unitPrice',this.value); renderStaged();">` : '—'}</td>
           <td><input class="tbl-input" type="number" step="any" value="${s.amount}" onchange="updateStagedField('${s.id}','amount',this.value); renderStaged();"></td>
-=======
-          <td><input class="tbl-input" type="number" value="${s.amount}" onchange="updateStagedField('${s.id}','amount',this.value)"></td>
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
           <td style="color:var(--ink-soft);font-size:12px;">${esc(s.note)}</td>
         </tr>
       `).join('')}
@@ -651,21 +597,12 @@ function renderDraft(){
   let total=0;
   const rows = draftItems.map(d=>{
     const p = productById(d.productId);
-<<<<<<< HEAD
     const sub = Math.round(d.unitPrice*d.quantity*100)/100; total+=sub;
     return `<tr><td>${p?esc(p.name):'—'}</td><td>${d.quantity}</td><td>${fmt(d.unitPrice)} ج</td><td>${fmt(sub)} ج</td>
       <td><button class="del-btn" onclick="removeDraftItem('${d.id}')">✕</button></td></tr>`;
   }).join('');
   area.innerHTML = `
     <table><tr><th>الصنف</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th><th></th></tr>${rows}</table>
-=======
-    const sub = (p?p.price:0)*d.quantity; total+=sub;
-    return `<tr><td>${p?esc(p.name):'—'}</td><td>${d.quantity}</td><td>${fmt(sub)} ج</td>
-      <td><button class="del-btn" onclick="removeDraftItem('${d.id}')">✕</button></td></tr>`;
-  }).join('');
-  area.innerHTML = `
-    <table><tr><th>الصنف</th><th>الكمية</th><th>الإجمالي</th><th></th></tr>${rows}</table>
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     <div class="row-actions">
       <div style="font-weight:700;">الإجمالي: ${fmt(total)} ج</div>
       <button class="btn btn-cheese btn-sm" onclick="saveDraftInvoice()">حفظ الفاتورة</button>

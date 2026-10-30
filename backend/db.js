@@ -25,15 +25,12 @@ function getPool() {
 }
 
 // دالة للتأكد من الجداول
-<<<<<<< HEAD
 // تاريخ اختياري من الواجهة (عشان تسجّل عملية بتاريخ يوم تاني)، ولو مش صالح نستخدم دلوقتي
 function pickDate(d) {
     const x = d ? new Date(d) : null;
     return x && !isNaN(x.getTime()) ? x : new Date();
 }
 
-=======
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
 let schemaPromise = null;
 function ensureSchema() {
     if (!schemaPromise) schemaPromise = _ensureSchema().catch((e) => { schemaPromise = null; throw e; });
@@ -93,10 +90,7 @@ async function _ensureSchema() {
       from_cash   BOOLEAN NOT NULL DEFAULT TRUE,
       date        TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-<<<<<<< HEAD
     ALTER TABLE supplier_txns ADD COLUMN IF NOT EXISTS items JSONB;
-=======
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     CREATE TABLE IF NOT EXISTS cash_entries (
       id          TEXT PRIMARY KEY,
       type        TEXT NOT NULL CHECK (type IN ('in','out')),
@@ -123,6 +117,12 @@ async function listProducts() {
     const r = await getPool().query('SELECT * FROM products ORDER BY created_at ASC');
     return r.rows.map(mapProduct);
 }
+// فحص سريع للاتصال بالداتابيز
+async function ping() {
+    await ensureSchema();
+    await getPool().query('SELECT 1');
+}
+
 async function createProduct({ name, price }) {
     await ensureSchema();
     const id = randomUUID();
@@ -183,11 +183,7 @@ async function deleteClient(id) {
 }
 
 /* ---------------- invoices ---------------- */
-<<<<<<< HEAD
 async function createInvoice(clientId, { items, rawText, date }) {
-=======
-async function createInvoice(clientId, { items, rawText }) {
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     await ensureSchema();
     const list = Array.isArray(items) ? items : [];
     if (!list.length) throw new Error('لا يوجد أصناف للفاتورة');
@@ -195,24 +191,16 @@ async function createInvoice(clientId, { items, rawText }) {
     try {
         await client.query('BEGIN');
         const invoiceId = randomUUID();
-<<<<<<< HEAD
         const now = pickDate(date);
-=======
-        const now = new Date();
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
         let total = 0;
         const itemRows = [];
         for (const it of list) {
             const pr = await client.query('SELECT * FROM products WHERE id=$1', [it.productId]);
             const product = pr.rows[0];
             const quantity = numOr0(it.quantity) || 1;
-<<<<<<< HEAD
             // السعر ممكن يتكتب يدوي لكل عميل/فاتورة، ولو مش مكتوب ناخد سعر الصنف الأساسي
             const custom = it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '' && Number.isFinite(Number(it.unitPrice)) && Number(it.unitPrice) >= 0;
             const unitPrice = custom ? Math.round(Number(it.unitPrice) * 100) / 100 : (product ? numOr0(product.price) : 0);
-=======
-            const unitPrice = product ? numOr0(product.price) : 0;
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
             const subtotal = Math.round(quantity * unitPrice * 100) / 100;
             total += subtotal;
             itemRows.push({
@@ -260,19 +248,11 @@ async function deleteInvoice(id) {
 }
 
 /* ---------------- payments ---------------- */
-<<<<<<< HEAD
 async function createPayment(clientId, { amount, note, date }) {
     await ensureSchema();
     const id = randomUUID();
     const amt = numOr0(amount);
     const now = pickDate(date);
-=======
-async function createPayment(clientId, { amount, note }) {
-    await ensureSchema();
-    const id = randomUUID();
-    const amt = numOr0(amount);
-    const now = new Date();
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     await getPool().query(
         'INSERT INTO payments (id, client_id, date, amount, note) VALUES ($1,$2,$3,$4,$5)', [id, clientId, now.toISOString(), amt, note || '']
     );
@@ -291,10 +271,7 @@ const mapTxn = (r) => ({
     amount: numOr0(r.amount),
     note: r.note || '',
     fromCash: r.from_cash !== false,
-<<<<<<< HEAD
     items: r.items || null,
-=======
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     date: new Date(r.date).toISOString(),
 });
 async function createSupplier({ name, phone }) {
@@ -321,7 +298,6 @@ async function deleteSupplier(id) {
     await ensureSchema();
     await getPool().query('DELETE FROM suppliers WHERE id=$1', [id]);
 }
-<<<<<<< HEAD
 async function createSupplierTxn(supplierId, { kind, amount, note, fromCash, items, date }) {
     await ensureSchema();
     if (kind !== 'goods' && kind !== 'payment') throw new Error('نوع العملية غير صحيح');
@@ -352,15 +328,6 @@ async function createSupplierTxn(supplierId, { kind, amount, note, fromCash, ite
     const r = await pool.query(
         'INSERT INTO supplier_txns (id, supplier_id, kind, amount, note, from_cash, items, date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
         [randomUUID(), supplierId, kind, amt, note || '', fromCash !== false, itemsJson, pickDate(date).toISOString()]
-=======
-async function createSupplierTxn(supplierId, { kind, amount, note, fromCash }) {
-    await ensureSchema();
-    if (kind !== 'goods' && kind !== 'payment') throw new Error('نوع العملية غير صحيح');
-    const amt = numOr0(amount);
-    if (amt <= 0) throw new Error('المبلغ لازم يكون أكبر من صفر');
-    const r = await getPool().query(
-        'INSERT INTO supplier_txns (id, supplier_id, kind, amount, note, from_cash) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *', [randomUUID(), supplierId, kind, amt, note || '', fromCash !== false]
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     );
     return mapTxn(r.rows[0]);
 }
@@ -378,21 +345,13 @@ const mapCash = (r) => ({
     reason: r.reason || '',
     date: new Date(r.date).toISOString(),
 });
-<<<<<<< HEAD
 async function createCashEntry({ type, amount, payee, reason, date }) {
-=======
-async function createCashEntry({ type, amount, payee, reason }) {
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     await ensureSchema();
     if (type !== 'in' && type !== 'out') throw new Error('نوع الحركة غير صحيح');
     const amt = numOr0(amount);
     if (amt <= 0) throw new Error('المبلغ لازم يكون أكبر من صفر');
     const r = await getPool().query(
-<<<<<<< HEAD
         'INSERT INTO cash_entries (id, type, amount, payee, reason, date) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *', [randomUUID(), type, amt, (payee || '').trim(), (reason || '').trim(), pickDate(date).toISOString()]
-=======
-        'INSERT INTO cash_entries (id, type, amount, payee, reason) VALUES ($1,$2,$3,$4,$5) RETURNING *', [randomUUID(), type, amt, (payee || '').trim(), (reason || '').trim()]
->>>>>>> 4ee868672f642d77910506b03b94c82c76f232d2
     );
     return mapCash(r.rows[0]);
 }
@@ -473,6 +432,7 @@ async function resetAll() {
 }
 
 module.exports = {
+    ping,
     listProducts,
     createProduct,
     updateProduct,
