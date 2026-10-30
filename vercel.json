@@ -2,5 +2,8 @@
     "framework": null,
     "buildCommand": null,
     "installCommand": "npm install",
-    "outputDirectory": "public"
+    "outputDirectory": "public",
+    "rewrites": [
+        { "source": "/api/:path*", "destination": "/api/index?p=:path*" }
+    ]
 }
