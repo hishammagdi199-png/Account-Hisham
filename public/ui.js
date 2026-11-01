@@ -290,8 +290,19 @@ async function xlDownload(wb, filename){
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
 // builder: (wb) => void — بيضيف الورق عن طريق xlTable
+// تحميل مكتبة الإكسيل عند الطلب (لو ما اتحمّلتش مع الصفحة): من الموقع نفسه، وبعدها من CDN احتياطي
+function _loadScript(src){
+  return new Promise((res, rej) => { const el = document.createElement('script'); el.src = src; el.onload = res; el.onerror = () => rej(new Error('load ' + src)); document.head.appendChild(el); });
+}
+async function xlEnsureLib(){
+  if (typeof ExcelJS !== 'undefined') return true;
+  for (const src of ['vendor/exceljs.min.js', 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js']) {
+    try { await _loadScript(src); if (typeof ExcelJS !== 'undefined') return true; } catch (e) {}
+  }
+  return false;
+}
 async function xlExport(filename, builder){
-  if (typeof ExcelJS === 'undefined') { showToast('مكتبة الإكسيل لسه بتحمّل، جرّب تاني بعد ثواني'); return; }
+  if (!(await xlEnsureLib())) { showToast('مش قادر أحمّل مكتبة الإكسيل — اتأكد من الإنترنت وحدّث الصفحة (Ctrl+F5)'); return; }
   try {
     const wb = new ExcelJS.Workbook();
     wb.creator = 'دفتر حساب الجبنة'; wb.created = new Date();
