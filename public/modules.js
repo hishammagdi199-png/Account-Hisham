@@ -53,7 +53,7 @@ function dayBadge(day){
     return v ? {text: (v > 0 ? '+' : '') + fmt(v), cls: v > 0 ? 'good' : 'bad'} : null;
   }
   if (view === 'personal') {
-    const v = sumBy(state.personal.filter(e => onDay(e.date)), e => e.type === 'in' ? e.amount : -e.amount);
+    const v = sumBy(state.personal.filter(e => onDay(e.date)), pEff);
     return v ? {text: (v > 0 ? '+' : '') + fmt(v), cls: v > 0 ? 'good' : 'bad'} : null;
   }
   const list = view === 'client' ? state.clients.filter(c => c.id === currentClientId) : state.clients;
@@ -309,7 +309,7 @@ function supplierBalance(s){ // الموجب = احنا مديونين للمو�
   const paid = sumBy(s.txns.filter(t => t.kind === 'payment'), t => t.amount);
   return r2(goods - paid);
 }
-// حساب تكلفة وبيع وربح فاتورة (نسبة الربح = الربح ÷ التكلفة)
+// إجمالي تكلفة الفاتورة (بيع/ربح محفوظين في الداتابيز بس مش بيتعرضوا في حساب المورد)
 function invCalc(items){
   const cost = sumBy(items, i => i.quantity * i.unitCost);
   const sale = sumBy(items, i => i.quantity * i.sellPrice);
@@ -326,21 +326,16 @@ function lastCostFor(productId){
 }
 function supInvoiceCard(s, t, showSupplier){
   const items = t.items || [];
-  const c = items.length ? invCalc(items) : null;
   return `<div class="invoice-card">
     <div class="invoice-head"><span class="tag item">${items.length ? 'فاتورة بضاعة' : 'بضاعة'}</span>
       ${showSupplier ? `<a class="lnk" onclick="openSupplier('${s.id}')">${esc(s.name)}</a>` : ''}
       <span class="dt">${fmtDateTime(t.date)}</span></div>
     ${items.length ? `<div class="tbl-wrap"><table>
-      <tr><th>الصنف</th><th>الكمية</th><th>سعر الشراء</th><th>سعر البيع</th><th>إجمالي الشراء</th><th>الربح</th></tr>
-      ${items.map(it => { const p = it.unitCost > 0 ? Math.round((it.sellPrice - it.unitCost) / it.unitCost * 1000) / 10 : 0;
-        return `<tr><td>${esc(it.productName)}</td><td>${it.quantity}</td><td>${fmt(it.unitCost)}</td><td>${fmt(it.sellPrice)}</td><td>${fmt(it.subtotal)} ج</td><td>${pctHtml(p)}</td></tr>`; }).join('')}
+      <tr><th>الصنف</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr>
+      ${items.map(it => `<tr><td>${esc(it.productName)}</td><td>${it.quantity}</td><td>${fmt(it.unitCost)}</td><td>${fmt(it.subtotal)} ج</td></tr>`).join('')}
     </table></div>
     <div class="inv-sum">
       <span>إجمالي الفاتورة: <b>${fmt(t.amount)} ج</b></span>
-      <span>قيمة البيع: <b>${fmt(c.sale)} ج</b></span>
-      <span>الربح: <b>${fmt(c.profit)} ج</b></span>
-      <span>نسبة الربح: ${pctHtml(c.pct)}</span>
     </div>` : `<div style="font-size:13.5px;">${esc(t.note) || '—'} <b style="margin-right:8px;">${fmt(t.amount)} ج</b></div>`}
     ${items.length && t.note ? `<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(t.note)}</div>` : ''}
     <div style="text-align:left;margin-top:4px;"><button class="edit-btn" onclick="editSupplierTxn('${s.id}','${t.id}')">تعديل ✎</button> <button class="del-btn" onclick="deleteSupplierTxn('${s.id}','${t.id}')">حذف ✕</button></div>
@@ -449,7 +444,7 @@ function renderSupplierView(){
     ${state.products.length ? `
     <div class="f-grid">
       <div class="wide"><label>الصنف (من الأصناف اللي ضفتها في الرئيسية)</label>
-        <select id="sdProduct" onchange="onSupProductChange()">${state.products.map(p => `<option value="${p.id}">${esc(p.name)} — بيع ${fmt(p.price)} ج</option>`).join('')}</select></div>
+        <select id="sdProduct" onchange="onSupProductChange()">${state.products.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
       <div><label>الكمية</label><input type="text" inputmode="decimal" autocomplete="off" id="sdQty" placeholder="الكمية (فاضية = 1)" oninput="updateSupPreview()"></div>
       <div><label>سعر الشراء للوحدة</label><input type="text" inputmode="decimal" autocomplete="off" id="sdCost" placeholder="ج" oninput="updateSupPreview()"></div>
       <div><label>&nbsp;</label><button class="btn btn-outline" onclick="addSupDraft()">+ إضافة للفاتورة</button></div>
@@ -491,9 +486,8 @@ function updateSupPreview(){
   const qty = isNaN(qRaw) ? 1 : qRaw;
   const cRaw = num(document.getElementById('sdCost').value);
   const cost = isNaN(cRaw) ? (lastCostFor(p.id) || 0) : cRaw;
-  if (!cost) { el.innerHTML = `سعر البيع: ${fmt(p.price)} ج — اكتب سعر الشراء علشان تشوف نسبة الربح.`; return; }
-  const pct = Math.round((p.price - cost) / cost * 1000) / 10;
-  el.innerHTML = `سعر البيع ${fmt(p.price)} ج • ربح الوحدة ${fmt(p.price - cost)} ج (${pctHtml(pct)}) • إجمالي السطر ${fmt(qty * cost)} ج`;
+  if (!cost) { el.innerHTML = 'اكتب سعر الشراء للوحدة.'; return; }
+  el.innerHTML = `إجمالي السطر: <b>${fmt(qty * cost)} ج</b>`;
 }
 function addSupDraft(){
   const productId = document.getElementById('sdProduct').value;
@@ -517,16 +511,12 @@ function renderSupDraft(){
   const c = invCalc(supDraft);
   area.innerHTML = `
     <div class="tbl-wrap"><table>
-      <tr><th>الصنف</th><th>الكمية</th><th>سعر الشراء</th><th>سعر البيع</th><th>الإجمالي</th><th>الربح</th><th></th></tr>
-      ${supDraft.map(d => { const p = Math.round((d.sellPrice - d.unitCost) / d.unitCost * 1000) / 10;
-        return `<tr><td>${esc(d.productName)}</td><td>${d.quantity}</td><td>${fmt(d.unitCost)}</td><td>${fmt(d.sellPrice)}</td>
-        <td>${fmt(d.quantity * d.unitCost)} ج</td><td>${pctHtml(p)}</td><td><button class="del-btn" onclick="removeSupDraft('${d.id}')">✕</button></td></tr>`; }).join('')}
+      <tr><th>الصنف</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th><th></th></tr>
+      ${supDraft.map(d => `<tr><td>${esc(d.productName)}</td><td>${d.quantity}</td><td>${fmt(d.unitCost)}</td>
+        <td>${fmt(d.quantity * d.unitCost)} ج</td><td><button class="del-btn" onclick="removeSupDraft('${d.id}')">✕</button></td></tr>`).join('')}
     </table></div>
     <div class="inv-sum">
       <span>إجمالي الفاتورة: <b>${fmt(c.cost)} ج</b></span>
-      <span>قيمة البيع: <b>${fmt(c.sale)} ج</b></span>
-      <span>الربح: <b>${fmt(c.profit)} ج</b></span>
-      <span>نسبة الربح: ${pctHtml(c.pct)}</span>
     </div>
     <div class="f-grid" style="margin-top:10px;">
       <div class="wide"><label>ملاحظة / رقم فاتورة المورد (اختياري)</label><input type="text" value="${esc(supDraftNote)}" oninput="supDraftNote=this.value"></div>
@@ -562,12 +552,9 @@ function renderSupplierHistory(){
   const box = document.getElementById('supHistory'); if (!box) return;
   const s = getSupplier(currentSupplierId); if (!s) return;
   const txns = s.txns.filter(t => inRange(t.date)).sort((a, b) => new Date(b.date) - new Date(a.date));
-  const goodsInRange = txns.filter(t => t.kind === 'goods');
-  const c = invCalc(goodsInRange.flatMap(t => t.items || []));
   box.innerHTML = `
     <div class="stage-note" style="margin:0 0 10px;">المعروض: <b>${rangeLabel()}</b> —
-      <a class="lnk" onclick="shiftWeek(-7)">→ ٧ أيام أقدم</a> • <a class="lnk" onclick="shiftWeek(7)">٧ أيام أحدث ←</a>
-      ${goodsInRange.some(t => t.items) ? ` • ربح فواتير الفترة: ${fmt(c.profit)} ج (${pctHtml(c.pct)})` : ''}</div>
+      <a class="lnk" onclick="shiftWeek(-7)">→ ٧ أيام أقدم</a> • <a class="lnk" onclick="shiftWeek(7)">٧ أيام أحدث ←</a></div>
     ${txns.length ? txns.map(t => t.kind === 'goods' ? supInvoiceCard(s, t, false) : `
       <div class="payment-line">
         <div><span class="tag payment">دفعة</span> <span style="margin-right:8px;color:var(--ink-soft);font-size:12px;">${fmtDateTime(t.date)}</span>

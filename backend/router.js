@@ -79,6 +79,10 @@ async function route(method, segments, body, pin) {
         }
 
         // INVOICES
+        if (segments[0] === 'invoices' && method === 'PUT' && segments.length === 2) {
+            const invoice = await db.updateInvoice(segments[1], body || {});
+            return { status: 200, body: { invoice } };
+        }
         if (segments[0] === 'invoices' && method === 'DELETE' && segments.length === 2) {
             await db.deleteInvoice(segments[1]);
             return { status: 200, body: { ok: true } };

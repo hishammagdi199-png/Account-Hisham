@@ -592,7 +592,8 @@ function renderHistory(){
         <table>${e.ref.items.map(it=>`<tr><td>${esc(it.productName)}</td><td>x${it.quantity}</td><td>${fmt(it.unitPrice)} ج</td><td>${fmt(it.subtotal)} ج</td></tr>`).join('')}</table>
         <div class="invoice-head" style="margin-top:6px;margin-bottom:0;">
           <span class="invoice-total">الإجمالي: ${fmt(e.ref.total)} ج</span>
-          <button class="del-btn" onclick="deleteInvoice('${e.ref.id}')">حذف الفاتورة ✕</button>
+          <span><button class="edit-btn" onclick="editInvoice('${client.id}','${e.ref.id}')">تعديل الفاتورة ✎</button>
+          <button class="del-btn" onclick="deleteInvoice('${e.ref.id}')">حذف الفاتورة ✕</button></span>
         </div>
       </div>`;
     } else {

@@ -112,6 +112,8 @@ async function _ensureSchema() {
       note        TEXT,
       date        TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE personal_entries ADD COLUMN IF NOT EXISTS loan TEXT;
+    ALTER TABLE personal_entries ADD COLUMN IF NOT EXISTS off_account BOOLEAN NOT NULL DEFAULT FALSE;
     CREATE INDEX IF NOT EXISTS idx_supplier_txns_supplier_id ON supplier_txns(supplier_id);
     CREATE INDEX IF NOT EXISTS idx_invoices_client_id      ON invoices(client_id);
     CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice_id ON invoice_items(invoice_id);
@@ -255,6 +257,63 @@ async function createInvoice(clientId, { items, rawText, date }) {
         client.release();
     }
 }
+// تعديل فاتورة عميل: الأصناف (صنف/كمية/سعر) والتاريخ
+async function updateInvoice(id, { items, date, rawText }) {
+    await ensureSchema();
+    const client = await getPool().connect();
+    try {
+        await client.query('BEGIN');
+        const cur = await client.query('SELECT * FROM invoices WHERE id=$1', [id]);
+        if (!cur.rows[0]) throw new Error('الفاتورة مش موجودة');
+        const sets = [];
+        const vals = [];
+        let itemRows = null;
+        if (items !== undefined) {
+            const list = Array.isArray(items) ? items : [];
+            if (!list.length) throw new Error('الفاتورة لازم يكون فيها صنف واحد على الأقل');
+            itemRows = [];
+            let total = 0;
+            for (const it of list) {
+                const pr = it.productId ? await client.query('SELECT * FROM products WHERE id=$1', [it.productId]) : { rows: [] };
+                const product = pr.rows[0];
+                const quantity = numOr0(it.quantity);
+                if (quantity <= 0) throw new Error('الكمية لازم تكون أكبر من صفر');
+                const custom = it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '' && Number.isFinite(Number(it.unitPrice)) && Number(it.unitPrice) >= 0;
+                const unitPrice = custom ? Math.round(Number(it.unitPrice) * 100) / 100 : (product ? numOr0(product.price) : 0);
+                const subtotal = Math.round(quantity * unitPrice * 100) / 100;
+                total += subtotal;
+                itemRows.push({ id: randomUUID(), productId: product ? product.id : null, productName: product ? product.name : (it.productName || ''), quantity, unitPrice, subtotal });
+            }
+            total = Math.round(total * 100) / 100;
+            await client.query('DELETE FROM invoice_items WHERE invoice_id=$1', [id]);
+            for (const it of itemRows) {
+                await client.query(
+                    'INSERT INTO invoice_items (id, invoice_id, product_id, product_name, quantity, unit_price, subtotal) VALUES ($1,$2,$3,$4,$5,$6,$7)', [it.id, id, it.productId, it.productName, it.quantity, it.unitPrice, it.subtotal]
+                );
+            }
+            vals.push(total); sets.push(`total=$${vals.length}`);
+        }
+        if (date) { vals.push(pickDate(date).toISOString()); sets.push(`date=$${vals.length}`); }
+        if (rawText !== undefined) { vals.push(String(rawText)); sets.push(`raw_text=$${vals.length}`); }
+        if (sets.length) { vals.push(id); await client.query(`UPDATE invoices SET ${sets.join(',')} WHERE id=$${vals.length}`, vals); }
+        const r = (await client.query('SELECT * FROM invoices WHERE id=$1', [id])).rows[0];
+        if (!itemRows) {
+            itemRows = (await client.query('SELECT * FROM invoice_items WHERE invoice_id=$1', [id])).rows.map((x) => ({
+                productId: x.product_id, productName: x.product_name, quantity: numOr0(x.quantity), unitPrice: numOr0(x.unit_price), subtotal: numOr0(x.subtotal) }));
+        }
+        await client.query('COMMIT');
+        return {
+            id: r.id, date: new Date(r.date).toISOString(), total: numOr0(r.total), rawText: r.raw_text || '',
+            items: itemRows.map((it) => ({ productId: it.productId, productName: it.productName, quantity: it.quantity, unitPrice: it.unitPrice, subtotal: it.subtotal })),
+        };
+    } catch (e) {
+        try { await client.query('ROLLBACK'); } catch (_) {}
+        throw e;
+    } finally {
+        client.release();
+    }
+}
+
 async function deleteInvoice(id) {
     await ensureSchema();
     await getPool().query('DELETE FROM invoices WHERE id=$1', [id]);
@@ -381,16 +440,27 @@ const mapPersonal = (r) => ({
     party: r.party || '',
     category: r.category || '',
     note: r.note || '',
+    loan: r.loan || null,
+    offAccount: r.off_account === true,
     date: new Date(r.date).toISOString(),
 });
-async function createPersonalEntry({ type, amount, party, category, note, date }) {
+// السلف: loan = 'borrow' (استلفت: فلوس دخلتلي من فلان) أو 'repay' (سددت سلفة لفلان)
+function checkLoan(loan, type, party, offAccount) {
+    if (loan !== null && loan !== undefined && loan !== '' && loan !== 'borrow' && loan !== 'repay') throw new Error('نوع السلفة غير صحيح');
+    if (!loan) return { loan: null, type, offAccount: false };
+    if (!String(party || '').trim()) throw new Error('اكتب اسم الجهة (استلفت من مين / سددت لمين)');
+    if (loan === 'borrow') return { loan, type: 'in', offAccount: false };
+    return { loan, type: 'out', offAccount: !!offAccount };
+}
+async function createPersonalEntry({ type, amount, party, category, note, date, loan, offAccount }) {
     await ensureSchema();
-    if (type !== 'in' && type !== 'out') throw new Error('نوع الحركة غير صحيح');
+    if (type !== 'in' && type !== 'out' && !loan) throw new Error('نوع الحركة غير صحيح');
     const amt = numOr0(amount);
     if (amt <= 0) throw new Error('المبلغ لازم يكون أكبر من صفر');
+    const l = checkLoan(loan, type, party, offAccount);
     const r = await getPool().query(
-        'INSERT INTO personal_entries (id, type, amount, party, category, note, date) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
-        [randomUUID(), type, amt, (party || '').trim(), (category || '').trim(), (note || '').trim(), pickDate(date).toISOString()]
+        'INSERT INTO personal_entries (id, type, amount, party, category, note, date, loan, off_account) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
+        [randomUUID(), l.type, amt, (party || '').trim(), (category || '').trim(), (note || '').trim(), pickDate(date).toISOString(), l.loan, l.offAccount]
     );
     return mapPersonal(r.rows[0]);
 }
@@ -445,13 +515,19 @@ async function updateCashEntry(id, { type, amount, payee, reason, date }) {
     if (date) sets.date = pickDate(date).toISOString();
     return mapCash(await updateRow('cash_entries', id, sets));
 }
-async function updatePersonalEntry(id, { type, amount, party, category, note, date }) {
+async function updatePersonalEntry(id, { type, amount, party, category, note, date, offAccount }) {
+    await ensureSchema();
+    const cur = await getPool().query('SELECT * FROM personal_entries WHERE id=$1', [id]);
+    if (!cur.rows[0]) throw new Error('العنصر مش موجود');
+    const isLoan = !!cur.rows[0].loan;
     const sets = {};
-    if (type !== undefined) { if (type !== 'in' && type !== 'out') throw new Error('نوع الحركة غير صحيح'); sets.type = type; }
+    // حركة السلفة نوعها ثابت (استلفت = داخل، سداد = خارج)
+    if (type !== undefined && !isLoan) { if (type !== 'in' && type !== 'out') throw new Error('نوع الحركة غير صحيح'); sets.type = type; }
     if (amount !== undefined) sets.amount = checkAmount(amount);
-    if (party !== undefined) sets.party = String(party).trim();
+    if (party !== undefined) { if (isLoan && !String(party).trim()) throw new Error('اكتب اسم الجهة'); sets.party = String(party).trim(); }
     if (category !== undefined) sets.category = String(category).trim();
     if (note !== undefined) sets.note = String(note).trim();
+    if (offAccount !== undefined && cur.rows[0].loan === 'repay') sets.off_account = !!offAccount;
     if (date) sets.date = pickDate(date).toISOString();
     return mapPersonal(await updateRow('personal_entries', id, sets));
 }
@@ -540,6 +616,7 @@ module.exports = {
     deleteClient,
     createInvoice,
     deleteInvoice,
+    updateInvoice,
     createPayment,
     deletePayment,
     createSupplier,
