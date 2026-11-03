@@ -122,7 +122,7 @@ function collectOwed(enc){
     { key: 'amount', label: 'المبلغ اللي استلمته', type: 'num', value: l.remaining > 0 ? l.remaining : '' },
     { key: 'note', label: 'ملاحظة (اختياري)', type: 'text', value: '' },
     { key: 'day', label: 'تاريخ الاستلام', type: 'date', value: localDateStr(dateForNew()) },
-    { key: 'toAcct', label: 'تدخل في رصيد حسابي (لو الفلوس راحت مكان تاني شيل العلامة)', type: 'check', value: true },
+    { key: 'toAcct', label: 'تدخل في رصيد حسابي (الفلوس رجعتلي) — شيل العلامة بس لو راحت مكان تاني', type: 'check', value: true },
   ], onSave: async (v) => {
     if (!(v.amount > 0)) { showToast('اكتب مبلغ صحيح'); throw new Error('amount'); }
     const json = await apiFetch('personal', 'POST', { type: 'in', loan: 'collect', amount: v.amount, party: l.name, category: 'استلام من حد', note: v.note, offAccount: !v.toAcct, date: dayToIso(v.day) });
@@ -138,14 +138,14 @@ function addOwed(){
     { key: 'amount', label: 'المبلغ', type: 'num', value: '' },
     { key: 'note', label: 'ملاحظة (مثلًا: من حساب العربية، خدها خلال شهر 10)', type: 'area', value: '' },
     { key: 'day', label: 'تاريخ ما أخدها', type: 'date', value: localDateStr(dateForNew()) },
-    { key: 'fromAcct', label: 'تتخصم من رصيد حسابي (لو الفلوس خرجت من حسابي دلوقتي). لو مسجّلها بس شيل العلامة', type: 'check', value: false },
+    { key: 'fromAcct', label: 'تتخصم من رصيد حسابي (الفلوس خرجت مني) — شيل العلامة بس لو بتسجّل فلوس اتاخدت قبل كده من مكان تاني', type: 'check', value: true },
   ], onSave: async (v) => {
     if (!String(v.party).trim()) { showToast('اكتب اسم الشخص'); throw new Error('party'); }
     if (!(v.amount > 0)) { showToast('اكتب مبلغ صحيح'); throw new Error('amount'); }
     const json = await apiFetch('personal', 'POST', { type: 'out', loan: 'lend', amount: v.amount, party: v.party, category: 'ليا عند حد', note: v.note, offAccount: !v.fromAcct, date: dayToIso(v.day) });
     state.personal.push(json.entry);
     renderPersonal();
-    showToast('اتسجّل — ليك عند الناس ' + fmt(loansTotal('owed')) + ' ج');
+    showToast(v.fromAcct ? 'اتسجّل واتخصم من حسابك — ليك عند الناس ' + fmt(loansTotal('owed')) + ' ج' : 'اتسجّل (من غير خصم) — ليك عند الناس ' + fmt(loansTotal('owed')) + ' ج');
   } });
 }
 
