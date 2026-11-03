@@ -112,6 +112,7 @@ async function _ensureSchema() {
       note        TEXT,
       date        TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS app_seeds (name TEXT PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
     ALTER TABLE personal_entries ADD COLUMN IF NOT EXISTS loan TEXT;
     ALTER TABLE personal_entries ADD COLUMN IF NOT EXISTS off_account BOOLEAN NOT NULL DEFAULT FALSE;
     CREATE INDEX IF NOT EXISTS idx_supplier_txns_supplier_id ON supplier_txns(supplier_id);
@@ -120,6 +121,24 @@ async function _ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_invoice_items_product_id ON invoice_items(product_id);
     CREATE INDEX IF NOT EXISTS idx_payments_client_id       ON payments(client_id);
   `);
+    await runSeeds(p);
+}
+
+// بيانات ابتدائية بتتسجل مرة واحدة بس (بعد كده لو مسحتها ما بترجعش)
+// «ليا عند الناس»: تسجيل بس من غير ما يأثر على رصيد حسابي (off_account = true)
+async function runSeeds(p) {
+    const seeds = [
+        { name: 'owed-baba-18400', amount: 18400, party: 'بابا', note: 'من حساب العربية — خدها خلال شهر 10', date: '2026-10-15T10:00:00.000Z' },
+        { name: 'owed-khazna-640', amount: 640, party: 'الخزينة', note: 'ليا عند الخزينة', date: new Date().toISOString() },
+    ];
+    for (const sd of seeds) {
+        const r = await p.query('INSERT INTO app_seeds (name) VALUES ($1) ON CONFLICT DO NOTHING RETURNING name', [sd.name]);
+        if (!r.rowCount) continue;
+        await p.query(
+            "INSERT INTO personal_entries (id, type, amount, party, category, note, date, loan, off_account) VALUES ($1,'out',$2,$3,'ليا عند حد',$4,$5,'lend',TRUE)",
+            [randomUUID(), sd.amount, sd.party, sd.note, sd.date]
+        );
+    }
 }
 
 const numOr0 = (v) => (v === null || v === undefined || v === '' || isNaN(parseFloat(v)) ? 0 : parseFloat(v));
@@ -444,13 +463,16 @@ const mapPersonal = (r) => ({
     offAccount: r.off_account === true,
     date: new Date(r.date).toISOString(),
 });
-// السلف: loan = 'borrow' (استلفت: فلوس دخلتلي من فلان) أو 'repay' (سددت سلفة لفلان)
+// السلف: loan =
+//   'borrow' استلفت (فلوس دخلتلي)   | 'repay'   سدّدت سلفة (فلوس خرجت)        ← اللي عليّ
+//   'lend'   حد أخد مني فلوس (خرجت) | 'collect' حد رجّع لي فلوس (دخلت)         ← اللي ليا عند الناس
+// offAccount = تسجيل بس من غير ما يأثر على رصيد حسابي (مثلًا فلوس اتاخدت من حساب تاني)
+const LOAN_ROLES = { borrow: 'in', repay: 'out', lend: 'out', collect: 'in' };
 function checkLoan(loan, type, party, offAccount) {
-    if (loan !== null && loan !== undefined && loan !== '' && loan !== 'borrow' && loan !== 'repay') throw new Error('نوع السلفة غير صحيح');
+    if (loan !== null && loan !== undefined && loan !== '' && !LOAN_ROLES[loan]) throw new Error('نوع السلفة غير صحيح');
     if (!loan) return { loan: null, type, offAccount: false };
-    if (!String(party || '').trim()) throw new Error('اكتب اسم الجهة (استلفت من مين / سددت لمين)');
-    if (loan === 'borrow') return { loan, type: 'in', offAccount: false };
-    return { loan, type: 'out', offAccount: !!offAccount };
+    if (!String(party || '').trim()) throw new Error('اكتب اسم الشخص أو الجهة');
+    return { loan, type: LOAN_ROLES[loan], offAccount: loan === 'borrow' ? false : !!offAccount };
 }
 async function createPersonalEntry({ type, amount, party, category, note, date, loan, offAccount }) {
     await ensureSchema();
@@ -527,7 +549,7 @@ async function updatePersonalEntry(id, { type, amount, party, category, note, da
     if (party !== undefined) { if (isLoan && !String(party).trim()) throw new Error('اكتب اسم الجهة'); sets.party = String(party).trim(); }
     if (category !== undefined) sets.category = String(category).trim();
     if (note !== undefined) sets.note = String(note).trim();
-    if (offAccount !== undefined && cur.rows[0].loan === 'repay') sets.off_account = !!offAccount;
+    if (offAccount !== undefined && cur.rows[0].loan && cur.rows[0].loan !== 'borrow') sets.off_account = !!offAccount;
     if (date) sets.date = pickDate(date).toISOString();
     return mapPersonal(await updateRow('personal_entries', id, sets));
 }

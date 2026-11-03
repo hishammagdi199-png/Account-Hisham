@@ -22,10 +22,10 @@ function editPersonalEntry(id){
   const e = state.personal.find(x => x.id === id); if (!e) return;
   const fields = e.loan ? [
     { key: 'amount', label: 'المبلغ', type: 'num', value: e.amount },
-    { key: 'party', label: e.loan === 'borrow' ? 'استلفت من مين' : 'سدّدت لمين', type: 'text', value: e.party },
+    { key: 'party', label: ({ borrow: 'استلفت من مين', repay: 'سدّدت لمين', lend: 'مين اللي أخد الفلوس', collect: 'مين اللي رجّعها' })[e.loan], type: 'text', value: e.party },
     { key: 'note', label: 'ملاحظات', type: 'area', value: e.note },
     { key: 'day', label: 'التاريخ', type: 'date', value: localDateStr(e.date) },
-  ].concat(e.loan === 'repay' ? [{ key: 'fromAcct', label: 'تتخصم من رصيد حسابي', type: 'check', value: !e.offAccount }] : []) : [
+  ].concat(e.loan && e.loan !== 'borrow' ? [{ key: 'fromAcct', label: ({ repay: 'تتخصم من رصيد حسابي', lend: 'اتخصمت من رصيد حسابي (لو شيلت العلامة يبقى تسجيل بس)', collect: 'دخلت في رصيد حسابي' })[e.loan], type: 'check', value: !e.offAccount }] : []) : [
     { key: 'type', label: 'النوع', type: 'select', value: e.type, options: [{ v: 'out', l: 'مصروف' }, { v: 'in', l: 'إيداع' }] },
     { key: 'amount', label: 'المبلغ', type: 'num', value: e.amount },
     { key: 'party', label: 'الجهة (فين / لمين / منين)', type: 'text', value: e.party },
@@ -33,10 +33,10 @@ function editPersonalEntry(id){
     { key: 'note', label: 'ملاحظات', type: 'area', value: e.note },
     { key: 'day', label: 'التاريخ', type: 'date', value: localDateStr(e.date) },
   ];
-  openEditModal({ title: e.loan ? (e.loan === 'borrow' ? 'تعديل سلفة' : 'تعديل سداد سلفة') : 'تعديل حركة في حسابي', fields, onSave: async (v) => {
+  openEditModal({ title: e.loan ? ({ borrow: 'تعديل سلفة', repay: 'تعديل سداد سلفة', lend: 'تعديل: ليا عند حد', collect: 'تعديل استلام' })[e.loan] : 'تعديل حركة في حسابي', fields, onSave: async (v) => {
     if (_badAmount(v.amount)) { showToast('اكتب مبلغ صحيح'); throw new Error('amount'); }
     const body = e.loan ? { amount: v.amount, party: v.party, note: v.note } : { type: v.type, amount: v.amount, party: v.party, category: v.category, note: v.note };
-    if (e.loan === 'repay') body.offAccount = !v.fromAcct;
+    if (e.loan && e.loan !== 'borrow') body.offAccount = !v.fromAcct;
     const dt = composeDate(v.day, e.date); if (dt) body.date = dt;
     const json = await apiFetch('personal/' + id, 'PUT', body);
     Object.assign(e, json.entry); render(); showToast('اتعدّلت الحركة');

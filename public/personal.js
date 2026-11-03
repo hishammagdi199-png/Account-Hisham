@@ -12,17 +12,19 @@ const pOut = (e) => (!e.offAccount && e.type === 'out' ? e.amount : 0);
 /* ---- السلف ---- */
 const LOAN_RE = /سلف|استلف|استلاف|تسليف/;      // سلفة / سلفه / سلف / استلفت ...
 const lenderKey = (n) => norm(n).trim();
-function loansSummary(){
+// kind: 'debt' = اللي عليّ (استلفت/سدّدت) | 'owed' = اللي ليا عند الناس (أخدوا مني/رجّعوا)
+function loansSummary(kind){
+  const first = kind === 'owed' ? 'lend' : 'borrow', second = kind === 'owed' ? 'collect' : 'repay';
   const m = {};
-  state.personal.filter(e => e.loan).sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(e => {
+  state.personal.filter(e => e.loan === first || e.loan === second).sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(e => {
     const k = lenderKey(e.party) || '—';
     const o = (m[k] ||= { key: k, name: (e.party || '').trim() || '—', borrowed: 0, repaid: 0, events: [] });
-    if (e.loan === 'borrow') o.borrowed += e.amount; else o.repaid += e.amount;
+    if (e.loan === first) o.borrowed += e.amount; else o.repaid += e.amount;
     o.events.push(e);
   });
   return Object.values(m).map(o => ({ ...o, remaining: r2(o.borrowed - o.repaid) })).sort((a, b) => b.remaining - a.remaining);
 }
-const loansTotal = () => r2(sumBy(loansSummary(), l => (l.remaining > 0 ? l.remaining : 0)));
+const loansTotal = (kind) => r2(sumBy(loansSummary(kind), l => (l.remaining > 0 ? l.remaining : 0)));
 function dayToIso(day){
   if (!day || day === todayStr()) return new Date().toISOString();
   const t = new Date(), [y, m, d] = day.split('-').map(Number);
@@ -34,57 +36,69 @@ function personalFiltered(){
   return state.personal.filter(e => inRange(e.date)).filter(e => {
     if (!n) return true;
     return norm(e.party).includes(n) || norm(e.category).includes(n) || norm(e.note).includes(n) ||
-           (e.loan && norm('سلفة').includes(n)) || (/^\d+(\.\d+)?$/.test(n) && String(e.amount).includes(n));
+           (e.loan && norm('سلفة ليا عند حد استلام سداد').includes(n)) || (/^\d+(\.\d+)?$/.test(n) && String(e.amount).includes(n));
   }).sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
-/* ---- كارت السلف ---- */
-function loansCardHtml(){
-  const L = loansSummary();
-  const total = loansTotal();
-  if (!L.length) return `<div class="card"><h2>💳 السلف</h2>
-    <div class="empty" style="padding:8px 0;">لسه مفيش سلف. لما تسجّل إيداع وتكتب «سلفة» في الجهة أو التصنيف أو الملاحظات، هتتسجل هنا لوحدها وتعرف عليك قد إيه ولمين.</div></div>`;
+/* ---- كروت السلف (عليّ) و «ليا عند الناس» ---- */
+const LEDGER = {
+  debt: { title: '💳 السلف (اللي عليّ)', totalLabel: 'إجمالي اللي عليك', first: 'استلفت', second: 'سدّدت', amtPrefix: 'عليك', btn: 'سداد', doneText: 'اتسدّدت ✓',
+          tagFirst: 'استلفت', tagSecond: 'سدّدت', firstCls: 'amt-plus',
+          empty: 'لسه مفيش سلف. لما تسجّل إيداع وتكتب «سلفة» في الجهة أو التصنيف أو الملاحظات، هتتسجل هنا لوحدها وتعرف عليك قد إيه ولمين.',
+          foot: 'السلفة بتفضل ثابتة لحد ما تسدّدها بزرار «سداد».' },
+  owed: { title: '💰 ليا عند الناس', totalLabel: 'إجمالي اللي ليك', first: 'أخدوا منك', second: 'رجّعوا لك', amtPrefix: 'ليك', btn: 'استلام', doneText: 'اتسلّمت ✓',
+          tagFirst: 'أخد منك', tagSecond: 'رجّع لك', firstCls: 'amt-lend',
+          empty: 'لسه مفيش فلوس ليك عند حد. دوس «+ إضافة» وسجّل اسم الشخص والمبلغ.',
+          foot: 'الفلوس دي بتفضل ظاهرة لحد ما تسجّل «استلام» وتخصمها.' },
+};
+function ledgerCardHtml(kind){
+  const T = LEDGER[kind], L = loansSummary(kind), total = loansTotal(kind);
+  const first = kind === 'owed' ? 'lend' : 'borrow';
+  const addBtn = kind === 'owed' ? '<button class="btn btn-cheese btn-sm" onclick="addOwed()">+ إضافة</button>' : '';
+  const head = `<div class="top-bar"><h2 style="border:none;margin:0;">${T.title}</h2>
+      <div style="display:flex;align-items:center;gap:12px;">${addBtn}
+      <div style="text-align:left;"><div style="font-size:11.5px;color:var(--ink-soft);">${T.totalLabel}</div>
+        <div class="amount ${kind === 'owed' ? (total > 0 ? 'credit' : 'even') : (total > 0 ? 'owe' : 'credit')}" style="font-size:22px;">${fmt(total)} ج</div></div></div></div>`;
+  if (!L.length) return `<div class="card">${head}<div class="empty" style="padding:8px 0;">${T.empty}</div></div>`;
   const row = (l) => {
-    const done = l.remaining <= 0.004, enc = encodeURIComponent(l.key), open = !!loanOpen[l.key];
+    const done = l.remaining <= 0.004, enc = encodeURIComponent(l.key), open = !!loanOpen[kind + ':' + l.key];
     let run = 0;
+    const settle = kind === 'owed' ? `collectOwed('${enc}')` : `repayLoan('${enc}')`;
     return `<div class="loan-item ${done ? 'done' : ''}">
       <div class="loan-head">
         <div><b>${esc(l.name)}</b>
-          <div class="loan-sub">استلفت ${fmt(l.borrowed)} ج • سددت ${fmt(l.repaid)} ج</div></div>
+          <div class="loan-sub">${T.first} ${fmt(l.borrowed)} ج • ${T.second} ${fmt(l.repaid)} ج</div></div>
         <div class="loan-act">
-          <span class="amount ${done ? 'credit' : 'owe'}" style="font-size:16px;">${done ? (l.remaining < -0.004 ? 'زيادة ' + fmt(-l.remaining) : 'اتسدّدت ✓') : 'عليك ' + fmt(l.remaining) + ' ج'}</span>
-          ${done ? '' : `<button class="btn btn-credit btn-sm" onclick="repayLoan('${enc}')">سداد</button>`}
-          <button class="edit-btn" onclick="toggleLoan('${enc}')">${open ? 'إخفاء السجل' : 'السجل'}</button>
+          <span class="amount ${kind === 'owed' ? (done ? 'even' : 'credit') : (done ? 'credit' : 'owe')}" style="font-size:16px;">${done ? (l.remaining < -0.004 ? 'زيادة ' + fmt(-l.remaining) : T.doneText) : T.amtPrefix + ' ' + fmt(l.remaining) + ' ج'}</span>
+          ${done ? '' : `<button class="btn btn-credit btn-sm" onclick="${settle}">${T.btn}</button>`}
+          <button class="edit-btn" onclick="toggleLoan('${kind}','${enc}')">${open ? 'إخفاء السجل' : 'السجل'}</button>
         </div>
       </div>
       ${open ? `<div class="loan-events">${l.events.map(e => {
-        run += e.loan === 'borrow' ? e.amount : -e.amount;
-        return `<div class="payment-line" style="background:${e.loan === 'borrow' ? '#FBF3EF' : '#F5FAF7'};">
-          <div><span class="tag ${e.loan === 'borrow' ? 'item' : 'payment'}">${e.loan === 'borrow' ? 'استلفت' : 'سدّدت'}</span>
+        const isFirst = e.loan === first;
+        run += isFirst ? e.amount : -e.amount;
+        return `<div class="payment-line" style="background:${e.offAccount ? '#F1EEE6' : (isFirst ? '#FBF3EF' : '#F5FAF7')};">
+          <div><span class="tag ${isFirst ? 'item' : 'payment'}">${isFirst ? T.tagFirst : T.tagSecond}</span>
             <span style="color:var(--ink-soft);font-size:12px;margin-right:6px;">${fmtDateTime(e.date)}</span>
-            ${e.offAccount ? '<span class="chip" style="padding:2px 9px;font-size:11.5px;">من برّه حسابي</span>' : ''}
+            ${e.offAccount ? '<span class="chip" style="padding:2px 9px;font-size:11.5px;">تسجيل بس — مش بيأثر على رصيد حسابي</span>' : ''}
             <span style="font-size:12px;color:var(--ink-soft);margin-right:6px;">المتبقي بعدها: ${fmt(r2(run))} ج</span>
             ${e.note ? `<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">📝 ${esc(e.note)}</div>` : ''}</div>
           <div style="display:flex;align-items:center;gap:10px;">
-            <span class="${e.loan === 'borrow' ? 'amt-plus' : 'amt-minus'}">${e.loan === 'borrow' ? '+' : '-'} ${fmt(e.amount)} ج</span>
+            <span class="${isFirst ? T.firstCls : 'amt-minus'}">${isFirst ? '+' : '-'} ${fmt(e.amount)} ج</span>
             <button class="edit-btn" onclick="editPersonalEntry('${e.id}')" title="تعديل">✎</button>
             <button class="del-btn" onclick="deletePersonalEntry('${e.id}')">✕</button>
           </div></div>`; }).join('')}</div>` : ''}
     </div>`;
   };
-  return `<div class="card">
-    <div class="top-bar"><h2 style="border:none;margin:0;">💳 السلف</h2>
-      <div style="text-align:left;"><div style="font-size:11.5px;color:var(--ink-soft);">إجمالي اللي عليك</div>
-        <div class="amount ${total > 0 ? 'owe' : 'credit'}" style="font-size:22px;">${fmt(total)} ج</div></div></div>
-    ${L.map(row).join('')}
-    <div class="stage-note">السلفة بتفضل ثابتة لحد ما تسدّدها بزرار «سداد» (أو تسجّل سداد وانت بتكتب «سلفة»).</div>
-  </div>`;
+  return `<div class="card">${head}${L.map(row).join('')}<div class="stage-note">${T.foot}</div></div>`;
 }
-function toggleLoan(enc){ const k = decodeURIComponent(enc); loanOpen[k] = !loanOpen[k]; renderPersonal(); }
+const loansCardHtml = () => ledgerCardHtml('debt');
+function toggleLoan(kind, enc){ const k = kind + ':' + decodeURIComponent(enc); loanOpen[k] = !loanOpen[k]; renderPersonal(); }
 
+// سداد سلفة عليّ
 function repayLoan(enc){
   const k = decodeURIComponent(enc);
-  const l = loansSummary().find(x => x.key === k); if (!l) return;
+  const l = loansSummary('debt').find(x => x.key === k); if (!l) return;
   openEditModal({ title: 'سداد سلفة — ' + l.name, fields: [
     { key: 'info', type: 'info', value: 'المتبقي عليك لـ ' + l.name + ': ' + fmt(l.remaining) + ' ج' },
     { key: 'amount', label: 'المبلغ اللي سدّدته', type: 'num', value: l.remaining > 0 ? l.remaining : '' },
@@ -96,7 +110,42 @@ function repayLoan(enc){
     const json = await apiFetch('personal', 'POST', { type: 'out', loan: 'repay', amount: v.amount, party: l.name, category: 'سداد سلفة', note: v.note, offAccount: !v.fromAcct, date: dayToIso(v.day) });
     state.personal.push(json.entry);
     renderPersonal();
-    showToast('اتسجّل السداد — لسه عليك ' + fmt(loansTotal()) + ' ج');
+    showToast('اتسجّل السداد — لسه عليك ' + fmt(loansTotal('debt')) + ' ج');
+  } });
+}
+// استلام فلوس من حد كان واخد مني
+function collectOwed(enc){
+  const k = decodeURIComponent(enc);
+  const l = loansSummary('owed').find(x => x.key === k); if (!l) return;
+  openEditModal({ title: 'استلام من — ' + l.name, fields: [
+    { key: 'info', type: 'info', value: 'ليك عند ' + l.name + ': ' + fmt(l.remaining) + ' ج' },
+    { key: 'amount', label: 'المبلغ اللي استلمته', type: 'num', value: l.remaining > 0 ? l.remaining : '' },
+    { key: 'note', label: 'ملاحظة (اختياري)', type: 'text', value: '' },
+    { key: 'day', label: 'تاريخ الاستلام', type: 'date', value: localDateStr(dateForNew()) },
+    { key: 'toAcct', label: 'تدخل في رصيد حسابي (لو الفلوس راحت مكان تاني شيل العلامة)', type: 'check', value: true },
+  ], onSave: async (v) => {
+    if (!(v.amount > 0)) { showToast('اكتب مبلغ صحيح'); throw new Error('amount'); }
+    const json = await apiFetch('personal', 'POST', { type: 'in', loan: 'collect', amount: v.amount, party: l.name, category: 'استلام من حد', note: v.note, offAccount: !v.toAcct, date: dayToIso(v.day) });
+    state.personal.push(json.entry);
+    renderPersonal();
+    showToast('اتسجّل الاستلام — لسه ليك ' + fmt(loansTotal('owed')) + ' ج');
+  } });
+}
+// إضافة «ليا عند حد»
+function addOwed(){
+  openEditModal({ title: 'إضافة: ليا عند حد', fields: [
+    { key: 'party', label: 'مين اللي أخد الفلوس (اسم الشخص / الجهة)', type: 'text', value: '' },
+    { key: 'amount', label: 'المبلغ', type: 'num', value: '' },
+    { key: 'note', label: 'ملاحظة (مثلًا: من حساب العربية، خدها خلال شهر 10)', type: 'area', value: '' },
+    { key: 'day', label: 'تاريخ ما أخدها', type: 'date', value: localDateStr(dateForNew()) },
+    { key: 'fromAcct', label: 'تتخصم من رصيد حسابي (لو الفلوس خرجت من حسابي دلوقتي). لو مسجّلها بس شيل العلامة', type: 'check', value: false },
+  ], onSave: async (v) => {
+    if (!String(v.party).trim()) { showToast('اكتب اسم الشخص'); throw new Error('party'); }
+    if (!(v.amount > 0)) { showToast('اكتب مبلغ صحيح'); throw new Error('amount'); }
+    const json = await apiFetch('personal', 'POST', { type: 'out', loan: 'lend', amount: v.amount, party: v.party, category: 'ليا عند حد', note: v.note, offAccount: !v.fromAcct, date: dayToIso(v.day) });
+    state.personal.push(json.entry);
+    renderPersonal();
+    showToast('اتسجّل — ليك عند الناس ' + fmt(loansTotal('owed')) + ' ج');
   } });
 }
 
@@ -109,14 +158,14 @@ function loanActive(){
 function loanAuto(){
   if (loanManual || personalType === 'in') return 'borrow';
   const k = lenderKey((document.getElementById('pvParty') || {}).value || '');
-  return k && loansSummary().some(l => l.key === k && l.remaining > 0.004) ? 'repay' : 'none';
+  return k && loansSummary('debt').some(l => l.key === k && l.remaining > 0.004) ? 'repay' : 'none';
 }
 function updateLoanBox(){
   const box = document.getElementById('loanBox'); if (!box) return;
   if (!loanActive()) { box.innerHTML = ''; return; }
   const role = loanChoice || loanAuto();
   const party = ((document.getElementById('pvParty') || {}).value || '').trim();
-  const l = loansSummary().find(x => x.key === lenderKey(party));
+  const l = loansSummary('debt').find(x => x.key === lenderKey(party));
   const opt = (v, text) => `<label class="lb-opt ${role === v ? 'on' : ''}"><input type="radio" name="loanRole" value="${v}" ${role === v ? 'checked' : ''} onchange="loanChoice=this.value;updateLoanBox()"> ${text}</label>`;
   const prevFromAcct = document.getElementById('loanFromAcct');
   const fromAcct = prevFromAcct ? prevFromAcct.checked : true;
@@ -142,7 +191,8 @@ function renderPersonal(){
   const rIn = sumBy(inRng, pIn);
   const rOut = sumBy(inRng, pOut);
   const isOut = personalType === 'out';
-  const debt = loansTotal();
+  const debt = loansTotal('debt');
+  const owed = loansTotal('owed');
 
   app.innerHTML = `
   <header class="top"><h1>حسابي الشخصي</h1><p>فلوسي أنا — منفصلة تمامًا عن الخزنة وحسابات الشغل</p></header>
@@ -155,6 +205,7 @@ function renderPersonal(){
         <div class="amount ${balance > 0 ? 'credit' : (balance < 0 ? 'owe' : 'even')}">${balance < 0 ? '-' : ''}${fmt(Math.abs(balance))} ج</div>
         <div style="font-size:12px;color:var(--ink-soft);margin-top:4px;">إجمالي الإيداعات ${fmt(totalIn)} ج − إجمالي المصروفات ${fmt(totalOut)} ج</div>
         ${debt > 0 ? `<div style="font-size:13px;margin-top:6px;color:var(--debit);font-weight:700;">💳 عليك سلف: ${fmt(debt)} ج</div>` : ''}
+        ${owed > 0 ? `<div style="font-size:13px;margin-top:4px;color:var(--credit);font-weight:700;">💰 ليك عند الناس: ${fmt(owed)} ج</div>` : ''}
       </div>
       <div class="mini-stats">
         <div><div class="n" style="color:var(--credit)">${fmt(rIn)}</div><div class="l">إيداع — ${rangeLabel()}</div></div>
@@ -163,7 +214,8 @@ function renderPersonal(){
     </div>
   </div>
 
-  ${loansCardHtml()}
+  ${ledgerCardHtml('debt')}
+  ${ledgerCardHtml('owed')}
 
   <div class="card">
     <h2>تسجيل حركة</h2>
@@ -181,7 +233,7 @@ function renderPersonal(){
     </div>
     <div id="loanBox"></div>
     <datalist id="pvCats">${['أكل وشرب', 'مواصلات', 'فواتير', 'إيجار', 'ملابس', 'صحة', 'ترفيه', 'هدايا', 'تعليم', 'عامة'].map(c => `<option value="${c}">`).join('')}</datalist>
-    <datalist id="pvLenders">${loansSummary().map(l => `<option value="${esc(l.name)}">`).join('')}</datalist>
+    <datalist id="pvLenders">${loansSummary('debt').map(l => `<option value="${esc(l.name)}">`).join('')}</datalist>
     <div class="stage-note">الحركة هتتسجل بتاريخ: <b>${fmtDay(localDateStr(dateForNew()), {weekday:'long', day:'numeric', month:'numeric'})}</b> (غيّره من شريط الأسبوع فوق).</div>
   </div>
 
@@ -202,7 +254,7 @@ function renderPersonalList(){
   const byCat = {};
   rows.filter(e => e.type === 'out' && !e.offAccount).forEach(e => { const k = e.category || 'بدون تصنيف'; byCat[k] = (byCat[k] || 0) + e.amount; });
   const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
-  const tagOf = (e) => e.loan === 'borrow' ? 'سلفة' : (e.loan === 'repay' ? 'سداد سلفة' : (e.type === 'in' ? 'إيداع' : 'مصروف'));
+  const tagOf = (e) => ({ borrow: 'سلفة', repay: 'سداد سلفة', lend: 'ليا عند حد', collect: 'استلام' }[e.loan] || (e.type === 'in' ? 'إيداع' : 'مصروف'));
 
   box.innerHTML = `
     ${q ? `<div class="stage-note" style="margin:0 0 10px;">نتيجة البحث عن «${esc(q)}»: ${rows.length} حركة • إيداع ${fmt(inn)} ج • مصروف ${fmt(out)} ج</div>` : ''}
@@ -213,7 +265,7 @@ function renderPersonalList(){
           <span class="tag ${e.type === 'in' ? 'payment' : 'item'}">${tagOf(e)}</span>
           <b style="margin-right:6px;">${esc(e.party) || (e.type === 'in' ? 'إيداع' : 'مصروف')}</b>
           ${e.category && !e.loan ? `<span class="chip" style="padding:2px 9px;font-size:11.5px;">${esc(e.category)}</span>` : ''}
-          ${e.offAccount ? '<span class="chip" style="padding:2px 9px;font-size:11.5px;">من برّه حسابي — ما اتخصمش من الرصيد</span>' : ''}
+          ${e.offAccount ? '<span class="chip" style="padding:2px 9px;font-size:11.5px;">تسجيل بس — مش بيأثر على رصيد حسابي</span>' : ''}
           <span style="color:var(--ink-soft);font-size:12px;margin-right:6px;">${fmtDateTime(e.date)}</span>
           ${e.note ? `<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">📝 ${esc(e.note)}</div>` : ''}
         </div>
@@ -243,7 +295,7 @@ async function addPersonalEntry(){
     state.personal.push(json.entry);
     loanChoice = null; loanManual = false;
     renderPersonal();
-    showToast(isLoan ? 'اتسجلت السلفة — عليك دلوقتي ' + fmt(loansTotal()) + ' ج' : 'اتسجلت الحركة');
+    showToast(isLoan ? 'اتسجلت السلفة — عليك دلوقتي ' + fmt(loansTotal('debt')) + ' ج' : 'اتسجلت الحركة');
   } catch (e) {}
 }
 async function deletePersonalEntry(id){

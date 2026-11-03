@@ -372,47 +372,59 @@ function exportPersonal(all){
   const rows = [];
   if (!all && opening !== null && Math.abs(opening) > 0.004)
     rows.push({ _open: true, _bold: true, _fill: 'FFEFE8D2', _nosum: true, kind: 'رصيد سابق', party: 'رصيد مرحَّل قبل الفترة', bal: r2(opening) });
-  const kindOf = (e) => e.loan === 'borrow' ? 'سلفة (استلفت)' : (e.loan === 'repay' ? 'سداد سلفة' : (e.type === 'in' ? 'إيداع' : 'مصروف'));
+  const kindOf = (e) => ({ borrow: 'سلفة (استلفت)', repay: 'سداد سلفة', lend: 'ليا عند حد', collect: 'استلام من حد' }[e.loan] || (e.type === 'in' ? 'إيداع' : 'مصروف'));
   per.forEach((x, i) => rows.push({ n: i + 1, date: x.e.date, kind: kindOf(x.e), party: x.e.party, cat: x.e.category,
-    note: (x.e.offAccount ? '[سداد من برّه الحساب — ما اتخصمش من الرصيد] ' : '') + x.e.note,
+    note: (x.e.offAccount ? '[تسجيل بس — مش بيأثر على رصيد حسابي] ' : '') + x.e.note,
     dep: pIn(x.e) || null, exp: pOut(x.e) || null, bal: x.bal }));
   const byCat = {};
   per.filter(x => x.e.type === 'out' && !x.e.offAccount).forEach(x => { const k = x.e.category || 'بدون تصنيف'; const a = (byCat[k] ||= { n: 0, t: 0 }); a.n++; a.t += x.e.amount; });
   const tin = r2(sumBy(per, x => pIn(x.e))), tout = r2(sumBy(per, x => pOut(x.e)));
-  const debt = loansTotal();
-  // السلف: ملخص لكل جهة + سجل كامل بالمتبقي بعد كل عملية
-  const L = loansSummary();
-  const loanEvents = [];
-  L.forEach(l => { let r = 0; l.events.forEach(e => { r += e.loan === 'borrow' ? e.amount : -e.amount;
-    loanEvents.push({ date: e.date, who: l.name, kind: e.loan === 'borrow' ? 'استلفت' : 'سدّدت', borrow: e.loan === 'borrow' ? e.amount : null, repay: e.loan === 'repay' ? e.amount : null,
-      acct: e.loan === 'repay' ? (e.offAccount ? 'لا (من برّه الحساب)' : 'نعم') : 'نعم', note: e.note || '', rem: r2(r) }); }); });
-  loanEvents.sort((a, b) => new Date(a.date) - new Date(b.date));
+  const debt = loansTotal('debt'), owed = loansTotal('owed');
+  // السلف (اللي عليّ) و«ليا عند الناس»: ملخص لكل شخص + سجل كامل بالمتبقي بعد كل عملية
+  const ledgerData = (kind) => {
+    const L = loansSummary(kind), first = kind === 'owed' ? 'lend' : 'borrow', ev = [];
+    L.forEach(l => { let r = 0; l.events.forEach(e => { const isFirst = e.loan === first; r += isFirst ? e.amount : -e.amount;
+      ev.push({ date: e.date, who: l.name, kind: kind === 'owed' ? (isFirst ? 'أخد مني' : 'رجّع لي') : (isFirst ? 'استلفت' : 'سدّدت'),
+        a: isFirst ? e.amount : null, b: isFirst ? null : e.amount,
+        acct: e.offAccount ? 'لا (تسجيل بس)' : 'نعم', note: e.note || '', rem: r2(r) }); }); });
+    ev.sort((x, y) => new Date(x.date) - new Date(y.date));
+    return { L, ev };
+  };
+  const dDebt = ledgerData('debt'), dOwed = ledgerData('owed');
+  const ledgerSheets = (wb, kind, d, total) => {
+    const owedK = kind === 'owed';
+    xlTable(wb, owedK ? 'ليا عند الناس' : 'السلف', {
+      title: owedK ? 'ليا عند الناس — مين واخد مني فلوس' : 'السلف — اللي عليّ ولمين', subtitle: 'تاريخ التصدير: ' + localDateStr(new Date()) + '     •     (كل التواريخ)',
+      stats: [{ label: owedK ? 'إجمالي اللي ليا' : 'إجمالي اللي عليّ', value: total, color: owedK ? XL.credit : _col(total > 0.004) }, { label: 'عدد الأشخاص / الجهات', value: d.L.length, fmt: '0' }],
+      cols: [{ h: '#', k: 'n', w: 6, t: 'int' }, { h: owedK ? 'الشخص / الجهة' : 'الجهة (استلفت منها)', k: 'who', w: 28 },
+        { h: owedK ? 'إجمالي اللي أخدوه مني' : 'إجمالي اللي استلفته', k: 'b', w: 22, t: 'money', color: 'debit' },
+        { h: owedK ? 'إجمالي اللي رجّعوه' : 'إجمالي اللي سدّدته', k: 'r', w: 22, t: 'money', color: 'credit' },
+        { h: owedK ? 'المتبقي ليا' : 'المتبقي عليّ', k: 'rem', w: 20, t: 'money', color: owedK ? undefined : 'sign' }],
+      rows: d.L.map((l, i) => ({ n: i + 1, who: l.name, b: r2(l.borrowed), r: r2(l.repaid), rem: l.remaining })),
+      total: { label: 'الإجمالي', labelKey: 'who', sums: ['b', 'r', 'rem'] },
+    });
+    xlTable(wb, owedK ? 'سجل ليا عند الناس' : 'سجل السلف', {
+      title: owedK ? 'سجل: ليا عند الناس' : 'سجل السلف (استلفت / سدّدت)', subtitle: 'تاريخ التصدير: ' + localDateStr(new Date()),
+      cols: [{ h: 'التاريخ', k: 'date', w: 20, t: 'date' }, { h: 'الشخص / الجهة', k: 'who', w: 24 }, { h: 'العملية', k: 'kind', w: 14 },
+        { h: owedK ? 'أخد مني' : 'استلفت', k: 'a', w: 15, t: 'money', color: 'debit' }, { h: owedK ? 'رجّع لي' : 'سدّدت', k: 'b', w: 15, t: 'money', color: 'credit' },
+        { h: 'أثّرت على رصيد حسابي؟', k: 'acct', w: 22 }, { h: 'ملاحظة', k: 'note', w: 34, wrap: true }, { h: 'المتبقي بعد العملية', k: 'rem', w: 22, t: 'money', color: owedK ? undefined : 'sign' }],
+      rows: d.ev, total: { label: 'الإجمالي', labelKey: 'who', sums: ['a', 'b'] },
+    });
+  };
   xlExport('حسابي_' + _tag(all), (wb) => {
     xlTable(wb, 'حركات حسابي', {
       title: 'حسابي الشخصي', subtitle: _sub(all),
       stats: [{ label: 'المتبقي معايا دلوقتي', value: r2(run), color: _col(run < -0.004) }, { label: 'إجمالي الإيداعات (الفترة)', value: tin, color: XL.credit },
-        { label: 'إجمالي المصروفات (الفترة)', value: tout, color: XL.debit }, { label: 'عليّ سلف دلوقتي', value: debt, color: _col(debt > 0.004) }],
+        { label: 'إجمالي المصروفات (الفترة)', value: tout, color: XL.debit }, { label: 'عليّ سلف دلوقتي', value: debt, color: _col(debt > 0.004) },
+        { label: 'ليا عند الناس', value: owed, color: XL.credit }],
       cols: [{ h: '#', k: 'n', w: 6, t: 'int' }, { h: 'التاريخ', k: 'date', w: 20, t: 'date' }, { h: 'النوع', k: 'kind', w: 16 }, { h: 'الجهة', k: 'party', w: 24, wrap: true },
         { h: 'التصنيف', k: 'cat', w: 16 }, { h: 'ملاحظات', k: 'note', w: 38, wrap: true }, { h: 'إيداع', k: 'dep', w: 15, t: 'money', color: 'credit' },
         { h: 'مصروف', k: 'exp', w: 15, t: 'money', color: 'debit' }, { h: 'الرصيد', k: 'bal', w: 17, t: 'money' }],
       rows, balance: { key: 'bal', plus: 'dep', minus: 'exp', posGood: true },
       total: { label: 'الإجمالي', labelKey: 'party', sums: ['dep', 'exp'], balKey: true },
     });
-    xlTable(wb, 'السلف', {
-      title: 'السلف — اللي عليّ ولمين', subtitle: 'تاريخ التصدير: ' + localDateStr(new Date()) + '     •     (كل التواريخ)',
-      stats: [{ label: 'إجمالي اللي عليّ', value: debt, color: _col(debt > 0.004) }, { label: 'عدد الجهات', value: L.length, fmt: '0' }],
-      cols: [{ h: '#', k: 'n', w: 6, t: 'int' }, { h: 'الجهة (استلفت منها)', k: 'who', w: 28 }, { h: 'إجمالي اللي استلفته', k: 'b', w: 20, t: 'money', color: 'debit' },
-        { h: 'إجمالي اللي سدّدته', k: 'r', w: 20, t: 'money', color: 'credit' }, { h: 'المتبقي عليّ', k: 'rem', w: 20, t: 'money', color: 'sign' }],
-      rows: L.map((l, i) => ({ n: i + 1, who: l.name, b: r2(l.borrowed), r: r2(l.repaid), rem: l.remaining })),
-      total: { label: 'الإجمالي', labelKey: 'who', sums: ['b', 'r', 'rem'] },
-    });
-    xlTable(wb, 'سجل السلف', {
-      title: 'سجل السلف (استلفت / سدّدت)', subtitle: 'تاريخ التصدير: ' + localDateStr(new Date()),
-      cols: [{ h: 'التاريخ', k: 'date', w: 20, t: 'date' }, { h: 'الجهة', k: 'who', w: 24 }, { h: 'العملية', k: 'kind', w: 12 },
-        { h: 'استلفت', k: 'borrow', w: 15, t: 'money', color: 'debit' }, { h: 'سدّدت', k: 'repay', w: 15, t: 'money', color: 'credit' },
-        { h: 'اتخصمت من حسابي؟', k: 'acct', w: 20 }, { h: 'ملاحظة', k: 'note', w: 34, wrap: true }, { h: 'المتبقي لهذه الجهة بعد العملية', k: 'rem', w: 24, t: 'money', color: 'sign' }],
-      rows: loanEvents, total: { label: 'الإجمالي', labelKey: 'who', sums: ['borrow', 'repay'] },
-    });
+    ledgerSheets(wb, 'owed', dOwed, owed);
+    ledgerSheets(wb, 'debt', dDebt, debt);
     xlTable(wb, 'المصروفات حسب التصنيف', { title: 'المصروفات حسب التصنيف', subtitle: _sub(all),
       cols: [{ h: 'التصنيف', k: 'c', w: 30 }, { h: 'عدد الحركات', k: 'n', w: 14, t: 'int' }, { h: 'الإجمالي', k: 't', w: 18, t: 'money', color: 'debit' }],
       rows: Object.entries(byCat).sort((a, b) => b[1].t - a[1].t).map(([k, v]) => ({ c: k, n: v.n, t: r2(v.t) })),
