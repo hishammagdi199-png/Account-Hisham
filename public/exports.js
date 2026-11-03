@@ -323,6 +323,47 @@ function exportSuppliersAll(all){
   });
 }
 
+/* ---------------- البضاعة (وارد المورد + مخزون) ---------------- */
+function exportStock(all){
+  const f = _filt(all);
+  const rowsAll = stockByProduct();
+  const inv = purchaseInvoices().filter(x => f(x.t.date));
+  const buyCost = r2(sumBy(inv, x => x.t.amount));
+  const buySale = r2(sumBy(inv, x => invCalc(x.t.items || []).sale));
+  xlExport('البضاعة_' + _tag(all), (wb) => {
+    xlTable(wb, 'المخزون حسب الصنف', {
+      title: 'البضاعة والمخزون', subtitle: _sub(all) + '     •     المتبقي = كل الوارد − كل المباع',
+      stats: [
+        { label: 'تكلفة الوارد (الفترة)', value: buyCost, color: XL.debit },
+        { label: 'بيع متوقع للوارد (الفترة)', value: buySale, color: XL.credit },
+        { label: 'ربح محقق (كل المبيعات)', value: r2(sumBy(rowsAll, r => r.profit)), color: XL.credit },
+        { label: 'قيمة المخزون المتبقي', value: r2(sumBy(rowsAll, r => r.stockValue)) },
+      ],
+      cols: [
+        { h: 'الصنف', k: 'name', w: 28 }, { h: 'وارد', k: 'boughtQty', w: 12, t: 'qty' }, { h: 'مباع', k: 'soldQty', w: 12, t: 'qty' },
+        { h: 'متبقي', k: 'remain', w: 12, t: 'qty' }, { h: 'متوسط الشراء', k: 'avgCost', w: 16, t: 'money' },
+        { h: 'تكلفة الوارد', k: 'boughtCost', w: 16, t: 'money', color: 'debit' }, { h: 'المبيعات', k: 'soldRev', w: 16, t: 'money', color: 'credit' },
+        { h: 'ربح محقق', k: 'profit', w: 16, t: 'money' }, { h: 'قيمة المتبقي', k: 'stockValue', w: 16, t: 'money' },
+      ],
+      rows: rowsAll, total: { label: 'الإجمالي', labelKey: 'name', sums: ['boughtCost', 'soldRev', 'profit', 'stockValue'] },
+    });
+    xlTable(wb, 'فواتير البضاعة', {
+      title: 'فواتير البضاعة الواردة من الموردين', subtitle: _sub(all),
+      cols: [
+        { h: '#', k: 'n', w: 6, t: 'int' }, { h: 'التاريخ', k: 'date', w: 20, t: 'date' }, { h: 'المورد', k: 'who', w: 24 },
+        { h: 'البيان', k: 'desc', w: 40, wrap: true }, { h: 'التكلفة', k: 'cost', w: 16, t: 'money', color: 'debit' },
+        { h: 'البيع المتوقع', k: 'sale', w: 16, t: 'money', color: 'credit' }, { h: 'الربح المتوقع', k: 'profit', w: 16, t: 'money' },
+      ],
+      rows: inv.map((x, i) => {
+        const c = invCalc(x.t.items || []);
+        const desc = (x.t.items || []).map(it => `${it.productName} ×${_en(it.quantity)}`).join('\n') || (x.t.note || '');
+        return { n: i + 1, date: x.t.date, who: x.s.name, desc, cost: c.cost, sale: c.sale, profit: c.profit };
+      }),
+      total: { label: 'الإجمالي', labelKey: 'who', sums: ['cost', 'sale', 'profit'] },
+    });
+  });
+}
+
 /* ---------------- الخزنة (لوحدها) ---------------- */
 function exportCash(all){
   const f = _filt(all);

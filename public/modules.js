@@ -56,6 +56,10 @@ function dayBadge(day){
     const v = sumBy(state.personal.filter(e => onDay(e.date)), pEff);
     return v ? {text: (v > 0 ? '+' : '') + fmt(v), cls: v > 0 ? 'good' : 'bad'} : null;
   }
+  if (view === 'stock') {
+    const v = sumBy(purchaseInvoices().filter(x => onDay(x.t.date)), x => x.t.amount);
+    return v ? {text: fmt(v), cls: 'bad'} : null;
+  }
   const list = view === 'client' ? state.clients.filter(c => c.id === currentClientId) : state.clients;
   const v = sumBy(list, c => sumBy(c.payments.filter(p => onDay(p.date)), p => p.amount));
   return v ? {text: fmt(v), cls: 'good'} : null;
@@ -109,7 +113,7 @@ function shiftWin(n){ winEnd = addDays(winEnd, n); if (selMode === 'day') selDat
 
 /* ---------- التنقل + البحث ---------- */
 function navHtml(active){
-  const tabs = [['home', '🏠 الرئيسية'], ['today', '💰 تحصيل اليوم'], ['suppliers', '🚚 الموردين'], ['cash', '🏦 الخزنة'], ['personal', '👤 حسابي']];
+  const tabs = [['home', '🏠 الرئيسية'], ['today', '💰 تحصيل اليوم'], ['suppliers', '🚚 الموردين'], ['stock', '📦 البضاعة'], ['cash', '🏦 الخزنة'], ['personal', '👤 حسابي']];
   const activeKey = active === 'supplier' ? 'suppliers' : (active === 'client' ? 'home' : active);
   return '<nav class="nav">' + tabs.map(([k, label]) =>
     `<button class="${k === activeKey ? 'on' : ''}" onclick="goView('${k}')">${label}</button>`).join('') + '</nav>' +
@@ -157,7 +161,7 @@ function runSearch(q){
   state.suppliers.forEach(s => s.txns.forEach(t => {
     if (t.kind === 'goods') {
       const names = (t.items || []).map(x => x.productName + ' ×' + x.quantity).join('، ');
-      if (has(names) || has(t.note) || amt(t.amount)) goods.push({t: s.name + ' — فاتورة بضاعة', s: names || t.note, a: fmt(t.amount) + ' ج', d: t.date, go: `openSupplier('${s.id}')`});
+      if (has(names) || has(t.note) || amt(t.amount)) goods.push({t: s.name + ' — فاتورة بضاعة', s: names || t.note, a: fmt(t.amount) + ' ج', d: t.date, go: `goView('stock')`});
     } else if (has(t.note) || amt(t.amount)) spay.push({t: s.name + ' — دفعة', s: t.note, a: fmt(t.amount) + ' ج', d: t.date, go: `openSupplier('${s.id}')`});
   }));
   add('📦 فواتير الموردين', goods);
@@ -293,12 +297,17 @@ async function addQuickPayment(){
   } catch (e) {}
 }
 async function deleteTodayPayment(clientId, payId){
-  if (!confirm('حذف الدفعة دي؟')) return;
   const client = getClient(clientId); if (!client) return;
+  const snap = client.payments.find(p => p.id === payId); if (!snap) return;
   try {
     await apiFetch('payments/' + payId, 'DELETE');
     client.payments = client.payments.filter(p => p.id !== payId);
     renderToday();
+    offerUndo('اتمسحت الدفعة', async () => {
+      const json = await apiFetch('clients/' + client.id + '/payments', 'POST', { amount: snap.amount, note: snap.note, date: snap.date });
+      client.payments.push(json.payment);
+      renderToday();
+    });
   } catch (e) {}
 }
 
@@ -364,10 +373,7 @@ function renderSuppliers(){
       </div>
     </div>
   </div>
-  <div class="card">
-    <h2>فواتير الموردين — ${rangeLabel()} (${inv.length})</h2>
-    ${inv.length ? inv.map(x => supInvoiceCard(x.s, x.t, true)).join('') : '<div class="empty">مفيش فواتير في الفترة دي</div>'}
-  </div>
+  <div class="stage-note" style="margin-top:-6px;">فواتير البضاعة (التكلفة والربح والمخزون) بتتحسب في تبويب <a class="lnk" onclick="goView('stock')">البضاعة</a>. هنا حساب اللي علينا للموردين بس.</div>
   <div class="card">
     <h2>الموردين</h2>
     <div class="client-list">
@@ -441,6 +447,7 @@ function renderSupplierView(){
 
   <div class="card">
     <h2>فاتورة بضاعة جديدة من المورد</h2>
+    <div class="stage-note" style="margin-top:0;">بعد الحفظ، التكلفة والربح والمخزون بيتحسبوا في تبويب <a class="lnk" onclick="goView('stock')">البضاعة</a>. هنا بتتحسب على حساب المورد بس.</div>
     ${state.products.length ? `
     <div class="f-grid">
       <div class="wide"><label>الصنف (من الأصناف اللي ضفتها في الرئيسية)</label>
@@ -532,7 +539,7 @@ async function saveSupInvoice(){
     s.txns.push(json.txn);
     supDraft = []; supDraftNote = '';
     renderSupplierView();
-    showToast('اتحفظت الفاتورة');
+    showToast('اتحفظت — هتتحسب في تبويب البضاعة');
   } catch (e) {}
 }
 async function addSupplierPayment(){
@@ -565,12 +572,20 @@ function renderSupplierHistory(){
       </div>`).join('') : '<div class="empty">مفيش حاجة في الفترة دي</div>'}`;
 }
 async function deleteSupplierTxn(supplierId, id){
-  if (!confirm('حذف العملية دي؟')) return;
   const s = getSupplier(supplierId); if (!s) return;
+  const snap = s.txns.find(t => t.id === id); if (!snap) return;
   try {
     await apiFetch('supplier-txns/' + id, 'DELETE');
     s.txns = s.txns.filter(t => t.id !== id);
     view === 'supplier' ? renderSupplierView() : render();
+    offerUndo(snap.kind === 'goods' ? 'اتمسحت فاتورة البضاعة' : 'اتمسحت الدفعة', async () => {
+      const body = snap.kind === 'goods'
+        ? { kind: 'goods', items: (snap.items || []).map(it => ({ productId: it.productId, productName: it.productName, quantity: it.quantity, unitCost: it.unitCost, sellPrice: it.sellPrice })), note: snap.note, date: snap.date }
+        : { kind: 'payment', amount: snap.amount, note: snap.note, fromCash: snap.fromCash, date: snap.date };
+      const json = await apiFetch('suppliers/' + s.id + '/txns', 'POST', body);
+      s.txns.push(json.txn);
+      view === 'supplier' ? renderSupplierView() : render();
+    });
   } catch (e) {}
 }
 
@@ -663,10 +678,15 @@ async function addCashEntry(){
   } catch (e) {}
 }
 async function deleteCashEntry(id){
-  if (!confirm('حذف الحركة دي؟')) return;
+  const snap = state.cash.find(e => e.id === id); if (!snap) return;
   try {
     await apiFetch('cash/' + id, 'DELETE');
     state.cash = state.cash.filter(e => e.id !== id);
     renderCash();
+    offerUndo('اتمسحت حركة الخزنة', async () => {
+      const json = await apiFetch('cash', 'POST', { type: snap.type, amount: snap.amount, payee: snap.payee, reason: snap.reason, date: snap.date });
+      state.cash.push(json.entry);
+      renderCash();
+    });
   } catch (e) {}
 }

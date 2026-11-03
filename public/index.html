@@ -22,13 +22,14 @@ setTimeout(function(){
   if (a && a.querySelector('.loading')) {
     a.innerHTML = '<div class="card" style="text-align:center;"><h2>الصفحة اتأخرت في التحميل</h2>' +
       '<p style="font-size:13px;color:#867A63;">' + (window.__lastErr ? 'خطأ في الصفحة: ' + window.__lastErr : 'مفيش خطأ ظاهر في الصفحة — غالبًا السيرفر أو الداتابيز مش بيردوا.') + '</p>' +
-      '<p style="font-size:12.5px;">جرّب تفتح: <a href="/api/ping" target="_blank">/api/ping</a> • <a href="/api/health" target="_blank">/api/health</a> • <a href="/app.js" target="_blank">/app.js</a> • <a href="/modules.js" target="_blank">/modules.js</a></p>' +
+      '<p style="font-size:12.5px;">جرّب تفتح: <a href="/api/ping" target="_blank">/api/ping</a> • <a href="/api/health" target="_blank">/api/health</a> • <a href="/app.js" target="_blank">/app.js</a> • <a href="/stock.js" target="_blank">/stock.js</a></p>' +
       '<button onclick="location.reload()" style="padding:10px 18px;border:0;border-radius:5px;background:#C9962B;color:#fff;font-weight:700;cursor:pointer;">إعادة تحميل</button></div>';
   }
 }, 15000);
 </script>
 <script src="ui.js"></script>
 <script src="modules.js"></script>
+<script src="stock.js"></script>
 <script src="personal.js"></script>
 <script src="app.js"></script>
 <script src="exports.js"></script>

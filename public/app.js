@@ -10,7 +10,40 @@ function newId(){ return 'id' + Date.now() + '_' + (counter++); }
 function normalizeAr(s){ return (s||'').replace(/[إأآا]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه').replace(/\s+/g,' ').trim(); }
 function fmt(n){ return (Math.round((n||0)*100)/100).toLocaleString('ar-EG',{minimumFractionDigits:0,maximumFractionDigits:2}); }
 function esc(s){ return (s??'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
+let _toastTimer = null;
+let _undoFn = null;
+function showToast(msg){
+  const t = document.getElementById('toast'); if (!t) return;
+  _undoFn = null;
+  t.textContent = msg;
+  t.classList.add('show');
+  t.style.pointerEvents = 'none';
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+function offerUndo(msg, restore){
+  const t = document.getElementById('toast'); if (!t) return;
+  _undoFn = restore;
+  t.innerHTML = `<span>${esc(msg)}</span><button type="button" class="toast-undo" onclick="runUndo()">تراجع</button>`;
+  t.classList.add('show');
+  t.style.pointerEvents = 'auto';
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => {
+    t.classList.remove('show');
+    t.style.pointerEvents = 'none';
+    _undoFn = null;
+  }, 9000);
+}
+async function runUndo(){
+  const fn = _undoFn;
+  _undoFn = null;
+  clearTimeout(_toastTimer);
+  const t = document.getElementById('toast');
+  if (t) { t.classList.remove('show'); t.style.pointerEvents = 'none'; }
+  if (!fn) return;
+  try { await fn(); showToast('اترجعت العملية'); }
+  catch (e) { showToast('فشل التراجع'); }
+}
 
 function getPin(){ return localStorage.getItem('app_pin') || ''; }
 function setPinPrompt(){
@@ -333,18 +366,33 @@ async function addPayment(){
 }
 async function deleteInvoice(id){
   const client = getClient(currentClientId); if(!client) return;
+  const snap = client.invoices.find(i=>i.id===id); if(!snap) return;
   try{
     await apiFetch('invoices/'+id, 'DELETE');
     client.invoices = client.invoices.filter(i=>i.id!==id);
     renderClientView();
+    offerUndo('اتمسحت الفاتورة', async () => {
+      const json = await apiFetch('clients/'+client.id+'/invoices', 'POST', {
+        items: snap.items.map(it => ({ productId: it.productId, productName: it.productName, quantity: it.quantity, unitPrice: it.unitPrice })),
+        rawText: snap.rawText, date: snap.date
+      });
+      client.invoices.push(json.invoice);
+      renderClientView();
+    });
   }catch(e){}
 }
 async function deletePayment(id){
   const client = getClient(currentClientId); if(!client) return;
+  const snap = client.payments.find(p=>p.id===id); if(!snap) return;
   try{
     await apiFetch('payments/'+id, 'DELETE');
     client.payments = client.payments.filter(p=>p.id!==id);
     renderClientView();
+    offerUndo('اتمسحت الدفعة', async () => {
+      const json = await apiFetch('clients/'+client.id+'/payments', 'POST', { amount: snap.amount, note: snap.note, date: snap.date });
+      client.payments.push(json.payment);
+      renderClientView();
+    });
   }catch(e){}
 }
 
@@ -366,6 +414,7 @@ function render(){
     case 'cash': return renderCash();
     case 'search': return renderSearch();
     case 'personal': return renderPersonal();
+    case 'stock': return renderStock();
     case 'client': return renderClientView();
     default: return renderHome();
   }

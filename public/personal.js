@@ -299,10 +299,18 @@ async function addPersonalEntry(){
   } catch (e) {}
 }
 async function deletePersonalEntry(id){
-  if (!confirm('حذف الحركة دي؟')) return;
+  const snap = state.personal.find(e => e.id === id); if (!snap) return;
   try {
     await apiFetch('personal/' + id, 'DELETE');
     state.personal = state.personal.filter(e => e.id !== id);
     renderPersonal();
+    offerUndo('اتمسحت الحركة', async () => {
+      const json = await apiFetch('personal', 'POST', {
+        type: snap.type, amount: snap.amount, party: snap.party, category: snap.category,
+        note: snap.note, date: snap.date, loan: snap.loan, offAccount: snap.offAccount
+      });
+      state.personal.push(json.entry);
+      renderPersonal();
+    });
   } catch (e) {}
 }
