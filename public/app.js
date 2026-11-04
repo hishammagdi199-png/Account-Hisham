@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'shop-data-v2';
-let state = { products: [], clients: [], suppliers: [], cash: [], personal: [] };
+let state = { products: [], clients: [], suppliers: [], cash: [], personal: [], stockAdjust: [] };
 let view = 'home';
 let currentClientId = null;
 let staged = [];
@@ -109,6 +109,7 @@ async function loadState(){
   state.suppliers = state.suppliers || [];
   state.cash = state.cash || [];
   state.personal = state.personal || [];
+  state.stockAdjust = state.stockAdjust || [];
   render();
 }
 

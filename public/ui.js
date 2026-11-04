@@ -218,6 +218,7 @@ function xlTable(wb, name, o){
       if (col.color === 'debit' && v) cell.font = font({ bold: true, color: { argb: XL.debit } });
       if (col.color === 'credit' && v) cell.font = font({ bold: true, color: { argb: XL.credit } });
       if (col.color === 'sign' && typeof v === 'number') cell.font = font({ bold: true, color: { argb: v > 0.004 ? XL.debit : XL.credit } });
+      if (col.color === 'sign2' && typeof v === 'number') cell.font = font({ bold: true, color: { argb: v < -0.004 ? XL.debit : XL.credit } });
     });
     // الرصيد المتحرك: معادلة حقيقية (لو عدّلت رقم في الإكسيل الرصيد يتحدّث)
     if (bal && !row._open) {

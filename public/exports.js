@@ -323,29 +323,32 @@ function exportSuppliersAll(all){
   });
 }
 
-/* ---------------- البضاعة (وارد المورد + مخزون) ---------------- */
+/* ---------------- البضاعة (وارد المورد + مخزون شهري) ---------------- */
+// all=false: الشهر المعروض | all=true: كل الشهور (شيت لكل شهر) + ملخص
 function exportStock(all){
+  const months = all ? allStockMonths().slice().sort() : [stockMonth || thisMonth()];
+  const data = months.map(m => monthStock(m)).filter(d => all ? (d.rows.length || d.m === (stockMonth || thisMonth())) : true);
   const f = _filt(all);
-  const rowsAll = stockByProduct();
-  const inv = purchaseInvoices().filter(x => f(x.t.date));
-  const buyCost = r2(sumBy(inv, x => x.t.amount));
-  const buySale = r2(sumBy(inv, x => invCalc(x.t.items || []).sale));
-  xlExport('البضاعة_' + _tag(all), (wb) => {
-    xlTable(wb, 'المخزون حسب الصنف', {
-      title: 'البضاعة والمخزون', subtitle: _sub(all) + '     •     المتبقي = كل الوارد − كل المباع',
-      stats: [
-        { label: 'تكلفة الوارد (الفترة)', value: buyCost, color: XL.debit },
-        { label: 'بيع متوقع للوارد (الفترة)', value: buySale, color: XL.credit },
-        { label: 'ربح محقق (كل المبيعات)', value: r2(sumBy(rowsAll, r => r.profit)), color: XL.credit },
-        { label: 'قيمة المخزون المتبقي', value: r2(sumBy(rowsAll, r => r.stockValue)) },
-      ],
-      cols: [
-        { h: 'الصنف', k: 'name', w: 28 }, { h: 'وارد', k: 'boughtQty', w: 12, t: 'qty' }, { h: 'مباع', k: 'soldQty', w: 12, t: 'qty' },
-        { h: 'متبقي', k: 'remain', w: 12, t: 'qty' }, { h: 'متوسط الشراء', k: 'avgCost', w: 16, t: 'money' },
-        { h: 'تكلفة الوارد', k: 'boughtCost', w: 16, t: 'money', color: 'debit' }, { h: 'المبيعات', k: 'soldRev', w: 16, t: 'money', color: 'credit' },
-        { h: 'ربح محقق', k: 'profit', w: 16, t: 'money' }, { h: 'قيمة المتبقي', k: 'stockValue', w: 16, t: 'money' },
-      ],
-      rows: rowsAll, total: { label: 'الإجمالي', labelKey: 'name', sums: ['boughtCost', 'soldRev', 'profit', 'stockValue'] },
+  const inv = purchaseInvoices().filter(x => f(x.t.date)).slice().reverse();
+  xlExport('البضاعة_' + (all ? 'كل_الشهور' : months[0]), (wb) => {
+    xlTable(wb, 'ملخص الشهور', {
+      title: 'البضاعة — ملخص الأرباح الشهرية', subtitle: all ? 'كل الشهور' : 'شهر ' + monthLabel(months[0]),
+      cols: [{ h: 'الشهر', k: 'm', w: 20 }, { h: 'تكلفة الوارد', k: 'buy', w: 17, t: 'money', color: 'debit' }, { h: 'المبيعات', k: 'rev', w: 17, t: 'money', color: 'credit' },
+        { h: 'تكلفة المباع', k: 'cogs', w: 17, t: 'money' }, { h: 'الربح', k: 'profit', w: 17, t: 'money', color: 'sign2' }, { h: 'قيمة المتبقي', k: 'remain', w: 17, t: 'money' }],
+      rows: data.map(d => ({ m: monthLabel(d.m), buy: d.tot.buyCost, rev: d.tot.soldRev, cogs: d.tot.cogs, profit: d.tot.profit, remain: d.tot.remainVal })),
+      total: { label: 'الإجمالي', labelKey: 'm', sums: ['buy', 'rev', 'cogs', 'profit'] },
+    });
+    data.forEach(d => {
+      xlTable(wb, 'مخزون ' + d.m, {
+        title: 'المخزون — ' + monthLabel(d.m), subtitle: 'كل شهر بيبدأ من الصفر • المتبقي = وارد الشهر − مباع الشهر',
+        stats: [{ label: 'ربح الشهر', value: d.tot.profit, color: d.tot.profit >= 0 ? XL.credit : XL.debit }, { label: 'مبيعات الشهر', value: d.tot.soldRev, color: XL.credit },
+          { label: 'تكلفة الوارد', value: d.tot.buyCost, color: XL.debit }, { label: 'قيمة المتبقي', value: d.tot.remainVal }],
+        cols: [{ h: 'الصنف', k: 'name', w: 28 }, { h: 'وارد', k: 'boughtQty', w: 11, t: 'qty' }, { h: 'مباع', k: 'soldQty', w: 11, t: 'qty' }, { h: 'متبقي', k: 'remain', w: 11, t: 'qty' },
+          { h: 'متوسط الشراء', k: 'avgCost', w: 15, t: 'money' }, { h: 'تكلفة الوارد', k: 'boughtCost', w: 16, t: 'money', color: 'debit' }, { h: 'المبيعات', k: 'soldRev', w: 16, t: 'money', color: 'credit' },
+          { h: 'ربح الشهر', k: 'profit', w: 16, t: 'money' }, { h: 'قيمة المتبقي', k: 'stockValue', w: 16, t: 'money' }, { h: 'ملاحظة', k: 'note', w: 26, wrap: true }],
+        rows: d.rows.map(r => Object.assign({}, r, { note: r.adjusted ? ('تسوية: ' + (r.adjusted.note || 'يدوية')) : (r.noCost ? 'بدون سعر شراء' : '') })),
+        total: { label: 'الإجمالي', labelKey: 'name', sums: ['boughtCost', 'soldRev', 'profit', 'stockValue'] },
+      });
     });
     xlTable(wb, 'فواتير البضاعة', {
       title: 'فواتير البضاعة الواردة من الموردين', subtitle: _sub(all),
@@ -357,7 +360,7 @@ function exportStock(all){
       rows: inv.map((x, i) => {
         const c = invCalc(x.t.items || []);
         const desc = (x.t.items || []).map(it => `${it.productName} ×${_en(it.quantity)}`).join('\n') || (x.t.note || '');
-        return { n: i + 1, date: x.t.date, who: x.s.name, desc, cost: c.cost, sale: c.sale, profit: c.profit };
+        return { n: i + 1, date: x.t.date, who: x.s.name, desc, cost: c.cost || x.t.amount, sale: c.sale, profit: c.profit };
       }),
       total: { label: 'الإجمالي', labelKey: 'who', sums: ['cost', 'sale', 'profit'] },
     });

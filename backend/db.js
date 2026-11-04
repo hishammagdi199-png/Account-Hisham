@@ -113,6 +113,17 @@ async function _ensureSchema() {
       date        TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS app_seeds (name TEXT PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_excluded BOOLEAN NOT NULL DEFAULT FALSE;
+    CREATE TABLE IF NOT EXISTS stock_adjust (
+      id           TEXT PRIMARY KEY,
+      month        TEXT NOT NULL,
+      product_key  TEXT NOT NULL,
+      sold_qty     NUMERIC(12,2),
+      bought_qty   NUMERIC(12,2),
+      note         TEXT,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (month, product_key)
+    );
     ALTER TABLE personal_entries ADD COLUMN IF NOT EXISTS loan TEXT;
     ALTER TABLE personal_entries ADD COLUMN IF NOT EXISTS off_account BOOLEAN NOT NULL DEFAULT FALSE;
     CREATE INDEX IF NOT EXISTS idx_supplier_txns_supplier_id ON supplier_txns(supplier_id);
@@ -124,6 +135,37 @@ async function _ensureSchema() {
     await runSeeds(p);
 }
 
+// تظبيطات مخزون بتتعمل مرة واحدة بس:
+//  1) صنف «حساب قديم» (كان مضاف عشان أرصدة العملاء القديمة) يتشال من المخزون والأرباح (الفواتير والأرصدة زي ما هي)
+//  2) «ثلاجة 4ك»: لو المباع زايد 1 عن الوارد (كان عندك واحد قديم وبعته) يتظبط المباع في الشهر ده ليساوي الوارد
+async function seedStockFixes(p) {
+    const m1 = await p.query("INSERT INTO app_seeds (name) VALUES ('stock-exclude-old-account') ON CONFLICT DO NOTHING RETURNING name");
+    if (m1.rowCount) await p.query("UPDATE products SET stock_excluded=TRUE WHERE name ILIKE '%حساب%قديم%'");
+    const m2 = await p.query("INSERT INTO app_seeds (name) VALUES ('stock-adjust-fridge4k-sold') ON CONFLICT DO NOTHING RETURNING name");
+    if (!m2.rowCount) return;
+    const prods = await p.query("SELECT id, name FROM products WHERE name ~ 'ثلاج[ةه][^0-9]*4[^0-9]*ك' AND stock_excluded = FALSE");
+    for (const pr of prods.rows) {
+        const sold = await p.query(
+            `SELECT to_char((i.date AT TIME ZONE 'UTC') AT TIME ZONE 'Africa/Cairo', 'YYYY-MM') AS m, SUM(ii.quantity)::float AS q
+             FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id WHERE ii.product_id = $1 GROUP BY 1`, [pr.id]);
+        const bought = await p.query(
+            `SELECT to_char(t.date AT TIME ZONE 'Africa/Cairo', 'YYYY-MM') AS m, SUM((e->>'quantity')::float)::float AS q
+             FROM supplier_txns t, jsonb_array_elements(t.items) e
+             WHERE t.kind = 'goods' AND t.items IS NOT NULL AND e->>'productId' = $1 GROUP BY 1`, [pr.id]);
+        const S = {}, B = {};
+        sold.rows.forEach((r) => { S[r.m] = r.q; });
+        bought.rows.forEach((r) => { B[r.m] = r.q; });
+        const totS = Object.values(S).reduce((a, b) => a + b, 0), totB = Object.values(B).reduce((a, b) => a + b, 0);
+        if (Math.abs(totS - totB - 1) > 0.001) continue;                     // الحالة المطلوبة بس: مباع زايد واحد
+        const months = Object.keys(S).filter((m) => S[m] - (B[m] || 0) >= 1).sort();
+        const m = months[months.length - 1];
+        if (!m) continue;
+        await p.query(
+            "INSERT INTO stock_adjust (id, month, product_key, sold_qty, note) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (month, product_key) DO NOTHING",
+            [randomUUID(), m, 'id:' + pr.id, S[m] - 1, 'تسوية: كان عندي واحد قديم وبعته (مش من الوارد)']);
+    }
+}
+
 // بيانات ابتدائية بتتسجل مرة واحدة بس (بعد كده لو مسحتها ما بترجعش)
 // «ليا عند الناس»: تسجيل بس من غير ما يأثر على رصيد حسابي (off_account = true)
 async function runSeeds(p) {
@@ -131,6 +173,7 @@ async function runSeeds(p) {
         { name: 'owed-baba-18400', amount: 18400, party: 'بابا', note: 'من حساب العربية — خدها خلال شهر 10', date: '2026-10-15T10:00:00.000Z' },
         { name: 'owed-khazna-640', amount: 640, party: 'الخزينة', note: 'ليا عند الخزينة', date: new Date().toISOString() },
     ];
+    await seedStockFixes(p);
     for (const sd of seeds) {
         const r = await p.query('INSERT INTO app_seeds (name) VALUES ($1) ON CONFLICT DO NOTHING RETURNING name', [sd.name]);
         if (!r.rowCount) continue;
@@ -142,7 +185,7 @@ async function runSeeds(p) {
 }
 
 const numOr0 = (v) => (v === null || v === undefined || v === '' || isNaN(parseFloat(v)) ? 0 : parseFloat(v));
-const mapProduct = (r) => ({ id: r.id, name: r.name, price: numOr0(r.price) });
+const mapProduct = (r) => ({ id: r.id, name: r.name, price: numOr0(r.price), stockExcluded: r.stock_excluded === true });
 const mapClientBase = (r) => ({ id: r.id, name: r.name, phone: r.phone || '' });
 
 /* ---------------- products ---------------- */
@@ -173,6 +216,7 @@ async function updateProduct(id, fields) {
     let i = 1;
     if (fields.name !== undefined) { sets.push(`name=$${i++}`); vals.push(fields.name); }
     if (fields.price !== undefined) { sets.push(`price=$${i++}`); vals.push(numOr0(fields.price)); }
+    if (fields.stockExcluded !== undefined) { sets.push(`stock_excluded=$${i++}`); vals.push(!!fields.stockExcluded); }
     if (!sets.length) {
         const r = await getPool().query('SELECT * FROM products WHERE id=$1', [id]);
         return r.rows[0] ? mapProduct(r.rows[0]) : null;
@@ -554,11 +598,38 @@ async function updatePersonalEntry(id, { type, amount, party, category, note, da
     return mapPersonal(await updateRow('personal_entries', id, sets));
 }
 
+/* ---------------- تسوية المخزون الشهري (مباع / وارد يدوي لشهر معيّن) ---------------- */
+const mapAdjust = (r) => ({
+    id: r.id, month: r.month, productKey: r.product_key,
+    soldQty: r.sold_qty === null ? null : numOr0(r.sold_qty),
+    boughtQty: r.bought_qty === null ? null : numOr0(r.bought_qty),
+    note: r.note || '',
+});
+// upsert: لو الاتنين null يتمسح التسوية (رجوع للأرقام الأصلية)
+async function saveStockAdjust({ month, productKey, soldQty, boughtQty, note }) {
+    await ensureSchema();
+    if (!/^\d{4}-\d{2}$/.test(String(month || ''))) throw new Error('الشهر غير صحيح');
+    if (!String(productKey || '').trim()) throw new Error('الصنف غير محدد');
+    const sq = soldQty === null || soldQty === undefined || soldQty === '' ? null : Number(soldQty);
+    const bq = boughtQty === null || boughtQty === undefined || boughtQty === '' ? null : Number(boughtQty);
+    if ((sq !== null && !(sq >= 0)) || (bq !== null && !(bq >= 0))) throw new Error('الكمية لازم تكون صفر أو أكتر');
+    if (sq === null && bq === null) {
+        await getPool().query('DELETE FROM stock_adjust WHERE month=$1 AND product_key=$2', [month, productKey]);
+        return null;
+    }
+    const r = await getPool().query(
+        `INSERT INTO stock_adjust (id, month, product_key, sold_qty, bought_qty, note) VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (month, product_key) DO UPDATE SET sold_qty=EXCLUDED.sold_qty, bought_qty=EXCLUDED.bought_qty, note=EXCLUDED.note
+         RETURNING *`, [randomUUID(), month, productKey, sq, bq, String(note || '').trim()]
+    );
+    return mapAdjust(r.rows[0]);
+}
+
 /* ---------------- full state (for initial page load) ---------------- */
 async function getFullState() {
     await ensureSchema();
     const p = getPool();
-    const [productsR, clientsR, invoicesR, itemsR, paymentsR, suppliersR, txnsR, cashR, personalR] = await Promise.all([
+    const [productsR, clientsR, invoicesR, itemsR, paymentsR, suppliersR, txnsR, cashR, personalR, adjustR] = await Promise.all([
         p.query('SELECT * FROM products ORDER BY created_at ASC'),
         p.query('SELECT * FROM clients ORDER BY created_at ASC'),
         p.query('SELECT * FROM invoices ORDER BY date ASC'),
@@ -568,6 +639,7 @@ async function getFullState() {
         p.query('SELECT * FROM supplier_txns ORDER BY date ASC'),
         p.query('SELECT * FROM cash_entries ORDER BY date ASC'),
         p.query('SELECT * FROM personal_entries ORDER BY date ASC'),
+        p.query('SELECT * FROM stock_adjust ORDER BY month ASC'),
     ]);
     const itemsByInvoice = {};
     for (const row of itemsR.rows) {
@@ -611,7 +683,8 @@ async function getFullState() {
     const suppliers = suppliersR.rows.map((x) => ({ ...mapClientBase(x), txns: txnsBySupplier[x.id] || [] }));
     const cash = cashR.rows.map(mapCash);
     const personal = personalR.rows.map(mapPersonal);
-    return { products, clients, suppliers, cash, personal };
+    const stockAdjust = adjustR.rows.map(mapAdjust);
+    return { products, clients, suppliers, cash, personal, stockAdjust };
 }
 
 /* ---------------- reset ---------------- */
@@ -654,6 +727,7 @@ module.exports = {
     updateSupplierTxn,
     updateCashEntry,
     updatePersonalEntry,
+    saveStockAdjust,
     getFullState,
     resetAll,
 };

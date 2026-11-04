@@ -238,3 +238,10 @@
   .lb-opt.on{border-color:var(--cheese);background:#FFF3CF;}
 
   .amt-lend{color:var(--cheese-deep);font-weight:700;}
+
+
+  /* ===== البضاعة: اختيار الشهر ===== */
+  .monthbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px;}
+  .monthbar button{font-family:'Tajawal',sans-serif;font-weight:700;font-size:13px;padding:8px 14px;border:1.5px solid var(--line);background:var(--card);color:var(--ink-soft);border-radius:6px;cursor:pointer;}
+  .monthbar button.on{background:var(--cheese);border-color:var(--cheese);color:#fff;}
+  .monthbar select{width:auto;min-width:150px;}

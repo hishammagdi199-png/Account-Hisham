@@ -142,6 +142,12 @@ async function route(method, segments, body, pin) {
             }
         }
 
+        // STOCK ADJUST (تسوية المخزون الشهري)
+        if (segments[0] === 'stock-adjust' && method === 'POST' && segments.length === 1) {
+            const adjust = await db.saveStockAdjust(body || {});
+            return { status: 200, body: { adjust } };
+        }
+
         // PERSONAL (حسابي الشخصي)
         if (segments[0] === 'personal') {
             if (method === 'POST' && segments.length === 1) {
