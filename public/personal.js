@@ -3,6 +3,7 @@ let personalType = 'out';   // out | in
 let loanManual = false;     // زرار "💳 سلفة" اتضغط يدوي
 let loanChoice = null;      // null = تلقائي | 'borrow' | 'repay' | 'none'
 let loanOpen = {};          // الجهات اللي سجلها مفتوح
+let ledgerOpen = { debt: false, owed: false };   // كارت السلف / ليا برا مفتوح ولا مقفول
 
 /* ---- أثر الحركة على رصيد حسابي: السداد من برّه الحساب مش بيأثر على الرصيد ---- */
 const pEff = (e) => (e.offAccount ? 0 : (e.type === 'in' ? e.amount : -e.amount));
@@ -43,25 +44,31 @@ function personalFiltered(){
 /* ---- كروت السلف (عليّ) و «ليا عند الناس» ---- */
 const LEDGER = {
   debt: { title: '💳 السلف (اللي عليّ)', totalLabel: 'إجمالي اللي عليك', first: 'استلفت', second: 'سدّدت', amtPrefix: 'عليك', btn: 'سداد', doneText: 'اتسدّدت ✓',
-          tagFirst: 'استلفت', tagSecond: 'سدّدت', firstCls: 'amt-plus',
+          tagFirst: 'استلفت', tagSecond: 'سدّدت', firstCls: 'amt-plus', more: '+ استلفت تاني',
           empty: 'لسه مفيش سلف. لما تسجّل إيداع وتكتب «سلفة» في الجهة أو التصنيف أو الملاحظات، هتتسجل هنا لوحدها وتعرف عليك قد إيه ولمين.',
           foot: 'السلفة بتفضل ثابتة لحد ما تسدّدها بزرار «سداد».' },
   owed: { title: '💰فلوس ليا برا ', totalLabel: 'إجمالي اللي ليك', first: 'أخدوا منك', second: 'رجّعوا لك', amtPrefix: 'ليك', btn: 'استلام', doneText: 'اتسلّمت ✓',
-          tagFirst: 'أخد منك', tagSecond: 'رجّع لك', firstCls: 'amt-lend',
+          tagFirst: 'أخد منك', tagSecond: 'رجّع لك', firstCls: 'amt-lend', more: '+ سلّفته تاني',
           empty: 'لسه مفيش فلوس ليك عند حد. دوس «+ إضافة» وسجّل اسم الشخص والمبلغ.',
           foot: 'الفلوس دي بتفضل ظاهرة لحد ما تسجّل «استلام» وتخصمها.' },
 };
 function ledgerCardHtml(kind){
   const T = LEDGER[kind], L = loansSummary(kind), total = loansTotal(kind);
   const first = kind === 'owed' ? 'lend' : 'borrow';
-  const addBtn = kind === 'owed' ? '<button class="btn btn-cheese btn-sm" onclick="addOwed()">+ إضافة</button>' : '';
-  const head = `<div class="top-bar"><h2 style="border:none;margin:0;">${T.title}</h2>
+  const open = !!ledgerOpen[kind];
+  const active = L.filter(l => l.remaining > 0.004).length;
+  const addBtn = kind === 'owed'
+    ? '<button class="btn btn-cheese btn-sm" onclick="event.stopPropagation();addOwed()">+ إضافة</button>'
+    : '<button class="btn btn-cheese btn-sm" onclick="event.stopPropagation();addDebt()">+ سلفة جديدة</button>';
+  const head = `<div class="top-bar ledger-head" onclick="toggleLedger('${kind}')">
+      <h2 style="border:none;margin:0;"><span class="arrow">${open ? '▴' : '▾'}</span>${T.title} <span class="ledger-count">${active ? '(' + active + (kind === 'owed' ? ' عندهم فلوس ليك' : ' جهة عليك لها') + ')' : ''}</span></h2>
       <div style="display:flex;align-items:center;gap:12px;">${addBtn}
       <div style="text-align:left;"><div style="font-size:11.5px;color:var(--ink-soft);">${T.totalLabel}</div>
         <div class="amount ${kind === 'owed' ? (total > 0 ? 'credit' : 'even') : (total > 0 ? 'owe' : 'credit')}" style="font-size:22px;">${fmt(total)} ج</div></div></div></div>`;
-  if (!L.length) return `<div class="card">${head}<div class="empty" style="padding:8px 0;">${T.empty}</div></div>`;
+  if (!open) return `<div class="card" id="ledger_${kind}">${head}</div>`;
+  if (!L.length) return `<div class="card" id="ledger_${kind}">${head}<div class="ledger-body"><div class="empty" style="padding:8px 0;">${T.empty}</div></div></div>`;
   const row = (l) => {
-    const done = l.remaining <= 0.004, enc = encodeURIComponent(l.key), open = !!loanOpen[kind + ':' + l.key];
+    const done = l.remaining <= 0.004, enc = encodeURIComponent(l.key), openH = !!loanOpen[kind + ':' + l.key];
     let run = 0;
     const settle = kind === 'owed' ? `collectOwed('${enc}')` : `repayLoan('${enc}')`;
     return `<div class="loan-item ${done ? 'done' : ''}">
@@ -70,11 +77,12 @@ function ledgerCardHtml(kind){
           <div class="loan-sub">${T.first} ${fmt(l.borrowed)} ج • ${T.second} ${fmt(l.repaid)} ج</div></div>
         <div class="loan-act">
           <span class="amount ${kind === 'owed' ? (done ? 'even' : 'credit') : (done ? 'credit' : 'owe')}" style="font-size:16px;">${done ? (l.remaining < -0.004 ? 'زيادة ' + fmt(-l.remaining) : T.doneText) : T.amtPrefix + ' ' + fmt(l.remaining) + ' ج'}</span>
+          <button class="btn btn-cheese btn-sm" onclick="moreLoan('${kind}','${enc}')">${T.more}</button>
           ${done ? '' : `<button class="btn btn-credit btn-sm" onclick="${settle}">${T.btn}</button>`}
-          <button class="edit-btn" onclick="toggleLoan('${kind}','${enc}')">${open ? 'إخفاء السجل' : 'السجل'}</button>
+          <button class="edit-btn" onclick="toggleLoan('${kind}','${enc}')">${openH ? 'إخفاء السجل' : 'السجل'}</button>
         </div>
       </div>
-      ${open ? `<div class="loan-events">${l.events.map(e => {
+      ${openH ? `<div class="loan-events">${l.events.map(e => {
         const isFirst = e.loan === first;
         run += isFirst ? e.amount : -e.amount;
         return `<div class="payment-line" style="background:${e.offAccount ? '#F1EEE6' : (isFirst ? '#FBF3EF' : '#F5FAF7')};">
@@ -90,10 +98,13 @@ function ledgerCardHtml(kind){
           </div></div>`; }).join('')}</div>` : ''}
     </div>`;
   };
-  return `<div class="card">${head}${L.map(row).join('')}<div class="stage-note">${T.foot}</div></div>`;
+  return `<div class="card" id="ledger_${kind}">${head}<div class="ledger-body">${L.map(row).join('')}<div class="stage-note">${T.foot}</div></div></div>`;
 }
+// فتح/قفل الكارت من غير ما الصفحة كلها تتعاد (الخانات اللي بتكتب فيها ما بتتمسحش)
+function refreshLedger(kind){ const el = document.getElementById('ledger_' + kind); if (el) el.outerHTML = ledgerCardHtml(kind); else renderPersonal(); }
+function toggleLedger(kind){ ledgerOpen[kind] = !ledgerOpen[kind]; refreshLedger(kind); }
 const loansCardHtml = () => ledgerCardHtml('debt');
-function toggleLoan(kind, enc){ const k = kind + ':' + decodeURIComponent(enc); loanOpen[k] = !loanOpen[k]; renderPersonal(); }
+function toggleLoan(kind, enc){ const k = kind + ':' + decodeURIComponent(enc); loanOpen[k] = !loanOpen[k]; refreshLedger(kind); }
 
 // سداد سلفة عليّ
 function repayLoan(enc){
@@ -131,6 +142,49 @@ function collectOwed(enc){
     showToast('اتسجّل الاستلام — لسه ليك ' + fmt(loansTotal('owed')) + ' ج');
   } });
 }
+// دفعة جديدة على حساب نفس الشخص: المبلغ الجديد بس هو اللي بيأثر على رصيد حسابي، والإجمالي بيتجمع
+function moreLoan(kind, enc){
+  const k = decodeURIComponent(enc);
+  const l = loansSummary(kind).find(x => x.key === k); if (!l) return;
+  const owedK = kind === 'owed';
+  const fields = [
+    { key: 'info', type: 'info', value: (owedK ? 'ليك دلوقتي عند ' : 'عليك دلوقتي لـ ') + l.name + ': ' + fmt(Math.max(l.remaining, 0)) + ' ج\nالمبلغ الجديد بس هو اللي ' + (owedK ? 'بيتخصم من رصيدك' : 'بيدخل رصيدك') + '، والإجمالي بيتجمع.' },
+    { key: 'amount', label: owedK ? 'المبلغ الجديد اللي سلّفته' : 'المبلغ الجديد اللي استلفته', type: 'num', value: '' },
+    { key: 'note', label: 'ملاحظة (اختياري)', type: 'text', value: '' },
+    { key: 'day', label: 'التاريخ', type: 'date', value: localDateStr(dateForNew()) },
+  ];
+  if (owedK) fields.push({ key: 'fromAcct', label: 'تتخصم من رصيد حسابي (الفلوس خرجت مني) — شيل العلامة بس لو بتسجّل فقط', type: 'check', value: true });
+  openEditModal({ title: (owedK ? 'سلفة جديدة لـ ' : 'استلفت تاني من ') + l.name, fields, onSave: async (v) => {
+    if (!(v.amount > 0)) { showToast('اكتب مبلغ صحيح'); throw new Error('amount'); }
+    const body = owedK
+      ? { type: 'out', loan: 'lend', amount: v.amount, party: l.name, category: 'ليا عند حد', note: v.note, offAccount: !v.fromAcct, date: dayToIso(v.day) }
+      : { type: 'in', loan: 'borrow', amount: v.amount, party: l.name, category: 'سلفة', note: v.note, date: dayToIso(v.day) };
+    const json = await apiFetch('personal', 'POST', body);
+    state.personal.push(json.entry);
+    ledgerOpen[kind] = true; loanOpen[kind + ':' + k] = true;
+    renderPersonal();
+    const now = loansSummary(kind).find(x => x.key === k);
+    showToast((owedK ? 'ليك عند ' : 'عليك لـ ') + l.name + ' دلوقتي: ' + fmt(now ? now.remaining : 0) + ' ج');
+  } });
+}
+// سلفة جديدة (استلفت من حد) من الكارت
+function addDebt(){
+  openEditModal({ title: 'سلفة جديدة (استلفت من حد)', fields: [
+    { key: 'party', label: 'استلفت من مين (اسم الشخص / الجهة)', type: 'text', value: '' },
+    { key: 'amount', label: 'المبلغ', type: 'num', value: '' },
+    { key: 'note', label: 'ملاحظة (اختياري)', type: 'text', value: '' },
+    { key: 'day', label: 'التاريخ', type: 'date', value: localDateStr(dateForNew()) },
+    { key: 'info', type: 'info', value: 'المبلغ هيدخل رصيد حسابي.' },
+  ], onSave: async (v) => {
+    if (!String(v.party).trim()) { showToast('اكتب اسم الشخص'); throw new Error('party'); }
+    if (!(v.amount > 0)) { showToast('اكتب مبلغ صحيح'); throw new Error('amount'); }
+    const json = await apiFetch('personal', 'POST', { type: 'in', loan: 'borrow', amount: v.amount, party: v.party, category: 'سلفة', note: v.note, date: dayToIso(v.day) });
+    state.personal.push(json.entry);
+    ledgerOpen.debt = true;
+    renderPersonal();
+    showToast('اتسجّلت السلفة — عليك دلوقتي ' + fmt(loansTotal('debt')) + ' ج');
+  } });
+}
 // إضافة «ليا عند حد»
 function addOwed(){
   openEditModal({ title: 'إضافة: ليا عند حد', fields: [
@@ -144,6 +198,7 @@ function addOwed(){
     if (!(v.amount > 0)) { showToast('اكتب مبلغ صحيح'); throw new Error('amount'); }
     const json = await apiFetch('personal', 'POST', { type: 'out', loan: 'lend', amount: v.amount, party: v.party, category: 'ليا عند حد', note: v.note, offAccount: !v.fromAcct, date: dayToIso(v.day) });
     state.personal.push(json.entry);
+    ledgerOpen.owed = true;
     renderPersonal();
     showToast(v.fromAcct ? 'اتسجّل واتخصم من حسابك — ليك عند الناس ' + fmt(loansTotal('owed')) + ' ج' : 'اتسجّل (من غير خصم) — ليك عند الناس ' + fmt(loansTotal('owed')) + ' ج');
   } });

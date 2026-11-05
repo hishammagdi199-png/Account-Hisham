@@ -245,3 +245,17 @@
   .monthbar button{font-family:'Tajawal',sans-serif;font-weight:700;font-size:13px;padding:8px 14px;border:1.5px solid var(--line);background:var(--card);color:var(--ink-soft);border-radius:6px;cursor:pointer;}
   .monthbar button.on{background:var(--cheese);border-color:var(--cheese);color:#fff;}
   .monthbar select{width:auto;min-width:150px;}
+
+
+  /* ===== جداول البضاعة أوسع وأريح في القراءة ===== */
+  .wide-tbl{min-width:880px;font-size:14.5px;}
+  .wide-tbl th{padding:11px 16px;font-size:12.5px;white-space:nowrap;}
+  .wide-tbl td{padding:12px 16px;white-space:nowrap;}
+  .wide-tbl td:first-child,.wide-tbl th:first-child{min-width:190px;white-space:normal;}
+  .wide-tbl tr:nth-child(even) td{background:rgba(201,150,43,0.04);}
+
+  /* ===== كروت السلف / ليا برا: سهم يفتح ويقفل ===== */
+  .ledger-head{cursor:pointer;user-select:none;margin-bottom:0;}
+  .ledger-head .arrow{display:inline-block;font-size:17px;color:var(--cheese-deep);margin-left:8px;}
+  .ledger-count{font-size:12px;font-weight:400;color:var(--ink-soft);}
+  .ledger-body{margin-top:12px;}

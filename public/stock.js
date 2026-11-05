@@ -158,7 +158,7 @@ function stockInvoiceCard(s, t){
     <div class="invoice-head"><span class="tag item">فاتورة بضاعة</span>
       <a class="lnk" onclick="openSupplier('${s.id}')">${esc(s.name)}</a>
       <span class="dt">${fmtDateTime(t.date)}</span></div>
-    ${items.length ? `<div class="tbl-wrap"><table>
+    ${items.length ? `<div class="tbl-wrap"><table class="wide-tbl">
       <tr><th>الصنف</th><th>الكمية</th><th>تكلفة الوحدة</th><th>سعر البيع</th><th>الإجمالي</th></tr>
       ${items.map(it => `<tr><td>${esc(it.productName)}</td><td>${it.quantity}</td><td>${fmt(it.unitCost)} ج</td>
         <td>${fmt(it.sellPrice)} ج</td><td>${fmt(it.subtotal)} ج</td></tr>`).join('')}
@@ -212,7 +212,7 @@ function renderStock(){
   <div class="card">
     <h2>المخزون — ${monthLabel(m)}</h2>
     <div class="stage-note" style="margin-top:0;">الوارد من فواتير المورد خلال الشهر − المباع للعملاء خلال الشهر. الربح = المبيعات − (المباع × متوسط الشراء). من ✎ تقدر تظبّط وارد أو مباع صنف في الشهر ده.</div>
-    ${rows.length ? `<div class="tbl-wrap"><table>
+    ${rows.length ? `<div class="tbl-wrap"><table class="wide-tbl">
       <tr><th>الصنف</th><th>وارد</th><th>مباع</th><th>متبقي</th><th>متوسط الشراء</th><th>تكلفة الوارد</th><th>المبيعات</th><th>ربح الشهر</th><th>قيمة المتبقي</th><th></th></tr>
       ${rows.map(r => `<tr>
         <td>${esc(r.name)}${r.adjusted ? ` <span class="chip" title="${esc(r.adjusted.note || 'تسوية يدوية')}" style="padding:1px 8px;font-size:11px;">متظبّط*</span>` : ''}${r.noCost ? ' <span class="chip" style="padding:1px 8px;font-size:11px;">بدون سعر شراء</span>' : ''}</td>
@@ -237,7 +237,7 @@ function renderStock(){
 
   <div class="card">
     <h2>الشهور</h2>
-    <div class="tbl-wrap"><table>
+    <div class="tbl-wrap"><table class="wide-tbl">
       <tr><th>الشهر</th><th>تكلفة الوارد</th><th>المبيعات</th><th>تكلفة المباع</th><th>الربح</th><th>قيمة المتبقي</th><th></th></tr>
       ${summary.map(x => `<tr ${x.m === m ? 'style="background:#FFF3CF;"' : ''}>
         <td><b>${monthLabel(x.m)}</b></td><td>${fmt(x.t.buyCost)} ج</td><td>${fmt(x.t.soldRev)} ج</td><td>${fmt(x.t.cogs)} ج</td>
