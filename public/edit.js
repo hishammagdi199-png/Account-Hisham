@@ -90,7 +90,9 @@ const _ieSub = (r) => { const q = num(r.qty), p = num(r.price); return (isNaN(q)
 function _ieNet(){ const g = r2(sumBy(_invEd.rows, _ieSub)), d = Math.min(discNum(_invEd.disc), g); return { g, d, net: r2(g - d) }; }
 function _ieTotals(){
   const n = _ieNet();
-  const el = document.getElementById('ieTotal'); if (el) el.innerHTML = (n.d > 0 ? fmt(n.g) + ' − خصم ' + fmt(n.d) + ' = ' : '') + fmt(n.net) + ' ج';
+  const el = document.getElementById('ieTotal'); if (el) el.innerHTML = n.d > 0
+    ? `<div class="muted">إجمالي الأصناف: ${fmt(n.g)} ج</div><div class="muted">خصم: − ${fmt(n.d)} ج</div><div>الصافي: ${fmt(n.net)} ج</div>`
+    : `<div>الإجمالي: ${fmt(n.net)} ج</div>`;
   _invEd.rows.forEach(r => { const s = document.getElementById('ieSub_' + r.k); if (s) s.textContent = fmt(_ieSub(r)) + ' ج'; });
 }
 function invEdSet(k, field, v){ const r = _invEd.rows.find(x => x.k === k); if (r) { r[field] = v; _ieTotals(); } }
@@ -128,10 +130,11 @@ function renderInvEditor(){
       <div><label>تاريخ الفاتورة</label><input type="date" id="ieDay" value="${esc(ed.day)}" onchange="_invEd.day=this.value"></div>
       <div><label>خصم من الفاتورة (اختياري)</label><input type="text" inputmode="decimal" autocomplete="off" placeholder="مثال: 50" value="${esc(ed.disc)}" oninput="_invEd.disc=this.value;_ieTotals()"></div>
     </div>
-    <div class="inv-sum" style="font-size:15px;"><span>الصافي: <b id="ieTotal">${(() => { const n = _ieNet(); return (n.d > 0 ? fmt(n.g) + ' − خصم ' + fmt(n.d) + ' = ' : '') + fmt(n.net) + ' ج'; })()}</b></span></div>
+    <div class="inv-sum stack" style="font-size:15px;font-weight:700;"><div id="ieTotal"></div></div>
     <div class="modal-act"><button class="btn btn-ghost" onclick="closeEditModal()">إلغاء</button><button class="btn btn-cheese" id="ieSave" onclick="saveInvEditor()">حفظ التعديل</button></div>
   </div>`;
   document.body.appendChild(ov);
+  _ieTotals();
   ov.addEventListener('mousedown', (e) => { if (e.target === ov) closeEditModal(); });
   ov.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeEditModal(); });
 }

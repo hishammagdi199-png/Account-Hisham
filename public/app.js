@@ -622,12 +622,16 @@ let draftDisc = '', stagedDisc = '';
 function draftGross(){ return Math.round(draftItems.reduce((s, d) => s + d.unitPrice * d.quantity, 0) * 100) / 100; }
 function updateDraftNet(){
   const g = draftGross(), d = Math.min(discNum(draftDisc), g);
-  const el = document.getElementById('draftNet'); if (el) el.innerHTML = (d > 0 ? `<span style="color:var(--ink-soft);font-weight:400;">${fmt(g)} − خصم ${fmt(d)} = </span>` : '') + `الصافي: ${fmt(g - d)} ج`;
+  const el = document.getElementById('draftNet'); if (el) el.innerHTML = d > 0
+    ? `<div class="muted">إجمالي الأصناف: ${fmt(g)} ج</div><div class="muted">خصم: − ${fmt(d)} ج</div><div>الصافي: ${fmt(g - d)} ج</div>`
+    : `<div>الإجمالي: ${fmt(g)} ج</div>`;
 }
 function stagedGross(){ return Math.round(staged.filter(s => s.type === 'item' && s.productId).reduce((t, s) => t + (s.amount || 0), 0) * 100) / 100; }
 function updateStagedNet(){
   const g = stagedGross(), d = Math.min(discNum(stagedDisc), g);
-  const el = document.getElementById('stagedNet'); if (el) el.innerHTML = d > 0 ? `${fmt(g)} − خصم ${fmt(d)} = <b>${fmt(g - d)} ج</b>` : (g ? `إجمالي الأصناف: <b>${fmt(g)} ج</b>` : '');
+  const el = document.getElementById('stagedNet'); if (el) el.innerHTML = d > 0
+    ? `<div>إجمالي الأصناف: ${fmt(g)} ج</div><div>خصم: − ${fmt(d)} ج</div><div><b>الصافي: ${fmt(g - d)} ج</b></div>`
+    : (g ? `<div>إجمالي الأصناف: <b>${fmt(g)} ج</b></div>` : '');
 }
 function renderDraft(){
   const area = document.getElementById('draftList'); if(!area) return;
@@ -667,20 +671,23 @@ function renderHistory(){
         <div class="invoice-head"><span class="tag item">فاتورة</span><span class="dt">${dateStr}</span></div>
         <table>${e.ref.items.map(it=>`<tr><td>${esc(it.productName)}</td><td>x${it.quantity}</td><td>${fmt(it.unitPrice)} ج</td><td>${fmt(it.subtotal)} ج</td></tr>`).join('')}</table>
         <div class="invoice-head" style="margin-top:6px;margin-bottom:0;">
-          <span class="invoice-total">${e.ref.discount>0 ? `<span style="font-weight:400;font-size:12.5px;color:var(--ink-soft);">أصناف ${fmt(e.ref.total+e.ref.discount)} − خصم ${fmt(e.ref.discount)} • </span>` : ''}الصافي: ${fmt(e.ref.total)} ج</span>
+          <div class="inv-lines">
+            ${e.ref.discount>0 ? `<div class="muted">إجمالي الأصناف: ${fmt(e.ref.total+e.ref.discount)} ج</div><div class="muted">خصم: − ${fmt(e.ref.discount)} ج</div>` : ''}
+            <div class="invoice-total">${e.ref.discount>0 ? 'الصافي' : 'الإجمالي'}: ${fmt(e.ref.total)} ج</div>
+          </div>
           <span><button class="edit-btn" onclick="editInvoice('${client.id}','${e.ref.id}')">تعديل الفاتورة ✎</button>
           <button class="del-btn" onclick="deleteInvoice('${e.ref.id}')">حذف الفاتورة ✕</button></span>
         </div>
       </div>`;
     } else {
       return `<div class="payment-line">
-        <div><span class="tag payment">دفعة</span> <span style="margin-right:8px;color:var(--ink-soft);font-size:12px;">${dateStr}</span>
+        <div><span class="tag payment">دفعة</span>
           ${e.ref.note?`<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(e.ref.note)}</div>`:''}</div>
-        <div style="display:flex;align-items:center;gap:10px;">
+        <div class="pl-side"><div class="pl-date">${dateStr}</div><div class="pl-act">
           <span class="amt-minus">- ${fmt(e.ref.amount)} ج</span>
           <button class="edit-btn" onclick="editClientPayment('${client.id}','${e.ref.id}')" title="تعديل">✎</button>
           <button class="del-btn" onclick="deletePayment('${e.ref.id}')">✕</button>
-        </div>
+        </div></div>
       </div>`;
     }
   }).join('');

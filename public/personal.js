@@ -97,15 +97,14 @@ function ledgerCardHtml(kind){
         run += isFirst ? e.amount : -e.amount;
         return `<div class="payment-line" style="background:${e.offAccount ? '#F1EEE6' : (isFirst ? '#FBF3EF' : '#F5FAF7')};">
           <div><span class="tag ${isFirst ? 'item' : 'payment'}">${isFirst ? T.tagFirst : T.tagSecond}</span>
-            <span style="color:var(--ink-soft);font-size:12px;margin-right:6px;">${fmtDateTime(e.date)}</span>
             ${e.offAccount ? '<span class="chip" style="padding:2px 9px;font-size:11.5px;">تسجيل بس — مش بيأثر على رصيد حسابي</span>' : ''}
-            <span style="font-size:12px;color:var(--ink-soft);margin-right:6px;">المتبقي بعدها: ${fmt(r2(run))} ج</span>
+            <div style="font-size:12px;color:var(--ink-soft);margin-top:3px;">المتبقي بعدها: ${fmt(r2(run))} ج</div>
             ${e.note ? `<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">📝 ${esc(e.note)}</div>` : ''}</div>
-          <div style="display:flex;align-items:center;gap:10px;">
+          <div class="pl-side"><div class="pl-date">${fmtDateTime(e.date)}</div><div class="pl-act">
             <span class="${isFirst ? T.firstCls : 'amt-minus'}">${isFirst ? '+' : '-'} ${fmt(e.amount)} ج</span>
             <button class="edit-btn" onclick="editPersonalEntry('${e.id}')" title="تعديل">✎</button>
             <button class="del-btn" onclick="deletePersonalEntry('${e.id}')">✕</button>
-          </div></div>`; }).join('')}</div>` : ''}
+          </div></div></div>`; }).join('')}</div>` : ''}
     </div>`;
   };
   return `<div class="card" id="ledger_${kind}">${head}<div class="ledger-body">${L.map(row).join('')}<div class="stage-note">${T.foot}</div></div></div>`;
@@ -335,14 +334,13 @@ function renderPersonalList(){
           <b style="margin-right:6px;">${esc(e.party) || (e.type === 'in' ? 'إيداع' : 'مصروف')}</b>
           ${e.category && !e.loan ? `<span class="chip" style="padding:2px 9px;font-size:11.5px;">${esc(e.category)}</span>` : ''}
           ${e.offAccount ? '<span class="chip" style="padding:2px 9px;font-size:11.5px;">تسجيل بس — مش بيأثر على رصيد حسابي</span>' : ''}
-          <span style="color:var(--ink-soft);font-size:12px;margin-right:6px;">${fmtDateTime(e.date)}</span>
           ${e.note ? `<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">📝 ${esc(e.note)}</div>` : ''}
         </div>
-        <div style="display:flex;align-items:center;gap:10px;">
+        <div class="pl-side"><div class="pl-date">${fmtDateTime(e.date)}</div><div class="pl-act">
           <span class="${e.offAccount ? '' : (e.type === 'in' ? 'amt-minus' : 'amt-plus')}" ${e.offAccount ? 'style="color:var(--ink-soft);font-weight:700;"' : ''}>${e.offAccount ? '' : (e.type === 'in' ? '+ ' : '- ')}${fmt(e.amount)} ج</span>
           <button class="edit-btn" onclick="editPersonalEntry('${e.id}')" title="تعديل">✎</button>
           <button class="del-btn" onclick="deletePersonalEntry('${e.id}')">✕</button>
-        </div>
+        </div></div>
       </div>`).join('') : `<div class="empty">${q ? 'مفيش نتايج للبحث ده في الفترة المعروضة' : 'مفيش حركات في الفترة دي'}</div>`}`;
 }
 

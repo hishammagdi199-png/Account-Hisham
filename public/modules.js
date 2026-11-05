@@ -262,14 +262,13 @@ function renderToday(){
       <div class="payment-line">
         <div>
           <a class="lnk" onclick="openClient('${x.client.id}')">${esc(x.client.name)}</a>
-          <span style="margin-right:8px;color:var(--ink-soft);font-size:12px;">${multi ? fmtDateTime(x.p.date) : fmtTime(x.p.date)}</span>
           ${x.p.note ? `<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(x.p.note)}</div>` : ''}
         </div>
-        <div style="display:flex;align-items:center;gap:10px;">
+        <div class="pl-side"><div class="pl-date">${multi ? fmtDateTime(x.p.date) : fmtTime(x.p.date)}</div><div class="pl-act">
           <span class="amt-minus">${fmt(x.p.amount)} ج</span>
           <button class="edit-btn" onclick="editClientPayment('${x.client.id}','${x.p.id}')" title="تعديل">✎</button>
           <button class="del-btn" onclick="deleteTodayPayment('${x.client.id}','${x.p.id}')">✕</button>
-        </div>
+        </div></div>
       </div>`).join('') : '<div class="empty">مفيش تحصيل في الفترة دي</div>'}
   </div>
 
@@ -569,11 +568,11 @@ function renderSupplierHistory(){
       <a class="lnk" onclick="shiftWeek(-7)">→ ٧ أيام أقدم</a> • <a class="lnk" onclick="shiftWeek(7)">٧ أيام أحدث ←</a></div>
     ${txns.length ? txns.map(t => t.kind === 'goods' ? supInvoiceCard(s, t, false) : `
       <div class="payment-line">
-        <div><span class="tag payment">دفعة</span> <span style="margin-right:8px;color:var(--ink-soft);font-size:12px;">${fmtDateTime(t.date)}</span>
+        <div><span class="tag payment">دفعة</span>
           <div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(t.note)}${t.fromCash ? '' : ' (من برّه الخزنة)'}</div></div>
-        <div style="display:flex;align-items:center;gap:10px;"><span class="amt-minus">- ${fmt(t.amount)} ج</span>
+        <div class="pl-side"><div class="pl-date">${fmtDateTime(t.date)}</div><div class="pl-act"><span class="amt-minus">- ${fmt(t.amount)} ج</span>
           <button class="edit-btn" onclick="editSupplierTxn('${s.id}','${t.id}')" title="تعديل">✎</button>
-          <button class="del-btn" onclick="deleteSupplierTxn('${s.id}','${t.id}')">✕</button></div>
+          <button class="del-btn" onclick="deleteSupplierTxn('${s.id}','${t.id}')">✕</button></div></div>
       </div>`).join('') : '<div class="empty">مفيش حاجة في الفترة دي</div>'}`;
 }
 async function deleteSupplierTxn(supplierId, id){
@@ -678,14 +677,13 @@ function renderCashList(){
       <div class="payment-line" style="background:${m.dir === 'in' ? '#F5FAF7' : '#FBF3EF'};">
         <div>
           <span class="tag ${m.dir === 'in' ? 'payment' : 'item'}">${m.dir === 'in' ? 'داخل' : 'خارج'}</span>
-          <b style="margin-right:6px;">${esc(m.label)}</b>
-          <span style="color:var(--ink-soft);font-size:12px;">${fmtDateTime(m.date)}${m.src !== 'manual' ? ' • تلقائي' : ''}</span>
+          <b style="margin-right:6px;">${esc(m.label)}</b>${m.src !== 'manual' ? ' <span class="chip" style="padding:1px 8px;font-size:11px;">تلقائي</span>' : ''}
           ${m.detail ? `<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(m.detail)}</div>` : ''}
         </div>
-        <div style="display:flex;align-items:center;gap:10px;">
+        <div class="pl-side"><div class="pl-date">${fmtDateTime(m.date)}</div><div class="pl-act">
           <span class="${m.dir === 'in' ? 'amt-minus' : 'amt-plus'}">${m.dir === 'in' ? '+' : '-'} ${fmt(m.amount)} ج</span>
           ${m.src === 'manual' ? `<button class="edit-btn" onclick="editCashEntry('${m.id}')" title="تعديل">✎</button><button class="del-btn" onclick="deleteCashEntry('${m.id}')">✕</button>` : ''}
-        </div>
+        </div></div>
       </div>`).join('') : `<div class="empty">مفيش ${cashFilter === 'in' ? 'إيداعات' : (cashFilter === 'out' ? 'مصروفات' : 'حركات')} في الفترة دي</div>`);
 }
 async function addCashEntry(){
