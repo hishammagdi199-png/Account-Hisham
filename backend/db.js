@@ -114,6 +114,7 @@ async function _ensureSchema() {
     );
     CREATE TABLE IF NOT EXISTS app_seeds (name TEXT PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
     ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_excluded BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE invoices ADD COLUMN IF NOT EXISTS discount NUMERIC(12,2) NOT NULL DEFAULT 0;
     CREATE TABLE IF NOT EXISTS stock_adjust (
       id           TEXT PRIMARY KEY,
       month        TEXT NOT NULL,
@@ -261,7 +262,7 @@ async function deleteClient(id) {
 }
 
 /* ---------------- invoices ---------------- */
-async function createInvoice(clientId, { items, rawText, date }) {
+async function createInvoice(clientId, { items, rawText, date, discount }) {
     await ensureSchema();
     const list = Array.isArray(items) ? items : [];
     if (!list.length) throw new Error('لا يوجد أصناف للفاتورة');
@@ -291,8 +292,12 @@ async function createInvoice(clientId, { items, rawText, date }) {
             });
         }
         total = Math.round(total * 100) / 100;
+        // الخصم: بيتخصم من إجمالي الفاتورة، والإجمالي المسجّل (total) هو الصافي بعد الخصم
+        const disc = Math.max(0, Math.round(numOr0(discount) * 100) / 100);
+        if (disc > total + 0.001) throw new Error('الخصم أكبر من إجمالي الفاتورة');
+        total = Math.round((total - disc) * 100) / 100;
         await client.query(
-            'INSERT INTO invoices (id, client_id, date, total, raw_text) VALUES ($1,$2,$3,$4,$5)', [invoiceId, clientId, now.toISOString(), total, rawText || null]
+            'INSERT INTO invoices (id, client_id, date, total, raw_text, discount) VALUES ($1,$2,$3,$4,$5,$6)', [invoiceId, clientId, now.toISOString(), total, rawText || null, disc]
         );
         for (const it of itemRows) {
             await client.query(
@@ -304,6 +309,7 @@ async function createInvoice(clientId, { items, rawText, date }) {
             id: invoiceId,
             date: now.toISOString(),
             total,
+            discount: disc,
             rawText: rawText || '',
             items: itemRows.map((it) => ({
                 productId: it.productId,
@@ -321,7 +327,7 @@ async function createInvoice(clientId, { items, rawText, date }) {
     }
 }
 // تعديل فاتورة عميل: الأصناف (صنف/كمية/سعر) والتاريخ
-async function updateInvoice(id, { items, date, rawText }) {
+async function updateInvoice(id, { items, date, rawText, discount }) {
     await ensureSchema();
     const client = await getPool().connect();
     try {
@@ -331,6 +337,7 @@ async function updateInvoice(id, { items, date, rawText }) {
         const sets = [];
         const vals = [];
         let itemRows = null;
+        let grossNew = null;
         if (items !== undefined) {
             const list = Array.isArray(items) ? items : [];
             if (!list.length) throw new Error('الفاتورة لازم يكون فيها صنف واحد على الأقل');
@@ -354,7 +361,16 @@ async function updateInvoice(id, { items, date, rawText }) {
                     'INSERT INTO invoice_items (id, invoice_id, product_id, product_name, quantity, unit_price, subtotal) VALUES ($1,$2,$3,$4,$5,$6,$7)', [it.id, id, it.productId, it.productName, it.quantity, it.unitPrice, it.subtotal]
                 );
             }
-            vals.push(total); sets.push(`total=$${vals.length}`);
+            grossNew = total;
+        }
+        // الإجمالي (الصافي) = إجمالي الأصناف − الخصم
+        if (items !== undefined || discount !== undefined) {
+            let gross = grossNew;
+            if (gross === null) gross = numOr0((await client.query('SELECT COALESCE(SUM(subtotal),0) AS s FROM invoice_items WHERE invoice_id=$1', [id])).rows[0].s);
+            const disc = discount !== undefined ? Math.max(0, Math.round(numOr0(discount) * 100) / 100) : numOr0(cur.rows[0].discount);
+            if (disc > gross + 0.001) throw new Error('الخصم أكبر من إجمالي الفاتورة');
+            vals.push(Math.round((gross - disc) * 100) / 100); sets.push(`total=$${vals.length}`);
+            vals.push(disc); sets.push(`discount=$${vals.length}`);
         }
         if (date) { vals.push(pickDate(date).toISOString()); sets.push(`date=$${vals.length}`); }
         if (rawText !== undefined) { vals.push(String(rawText)); sets.push(`raw_text=$${vals.length}`); }
@@ -366,7 +382,7 @@ async function updateInvoice(id, { items, date, rawText }) {
         }
         await client.query('COMMIT');
         return {
-            id: r.id, date: new Date(r.date).toISOString(), total: numOr0(r.total), rawText: r.raw_text || '',
+            id: r.id, date: new Date(r.date).toISOString(), total: numOr0(r.total), discount: numOr0(r.discount), rawText: r.raw_text || '',
             items: itemRows.map((it) => ({ productId: it.productId, productName: it.productName, quantity: it.quantity, unitPrice: it.unitPrice, subtotal: it.subtotal })),
         };
     } catch (e) {
@@ -657,6 +673,7 @@ async function getFullState() {
             id: row.id,
             date: row.date.toISOString(),
             total: numOr0(row.total),
+            discount: numOr0(row.discount),
             rawText: row.raw_text || '',
             items: itemsByInvoice[row.id] || [],
         });

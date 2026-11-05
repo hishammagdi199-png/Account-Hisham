@@ -259,3 +259,12 @@
   .ledger-head .arrow{display:inline-block;font-size:17px;color:var(--cheese-deep);margin-left:8px;}
   .ledger-count{font-size:12px;font-weight:400;color:var(--ink-soft);}
   .ledger-body{margin-top:12px;}
+
+
+  /* ===== فلتر الحركات: الكل / إيداعات / مصروفات ===== */
+  .fchips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px;}
+  .fchips button{font-family:'Tajawal',sans-serif;font-weight:700;font-size:12.5px;padding:5px 12px;border:1.5px solid var(--line);background:var(--paper);color:var(--ink-soft);border-radius:20px;cursor:pointer;}
+  .fchips button span{font-weight:400;font-size:11px;margin-right:3px;opacity:.8;}
+  .fchips button.on{background:var(--cheese);border-color:var(--cheese);color:#fff;}
+  .fchips button.in.on{background:var(--credit);border-color:var(--credit);}
+  .fchips button.out.on{background:var(--debit);border-color:var(--debit);}

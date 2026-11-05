@@ -32,7 +32,7 @@ function _clientEvents(c){
     ...c.payments.map(p => ({ d: p.date, t: 'دفعة', ref: p })),
   ].sort(_asc);
 }
-const _invText = (inv) => inv.items.map(it => `${it.productName}  ×${_en(it.quantity)}  @ ${_en(it.unitPrice)}  =  ${_en(it.subtotal)}`).join('\n');
+const _invText = (inv) => inv.items.map(it => `${it.productName}  ×${_en(it.quantity)}  @ ${_en(it.unitPrice)}  =  ${_en(it.subtotal)}`).join('\n') + (inv.discount > 0 ? `\nخصم: -${_en(inv.discount)}` : '');
 
 // كشف حساب العميل: التاريخ | البيان (تفاصيل الفاتورة) | قيمة الفاتورة | الدفعة | الرصيد بعد الخصم
 function _clientStatement(wb, c, f, all, sheetName){
@@ -76,25 +76,27 @@ function _clientDetails(wb, c, f, all, sheetName, withName){
   c.invoices.filter(i => f(i.date)).sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(inv => {
     n++;
     inv.items.forEach((it, i) => rows.push({ who: c.name, g: c.id + n, inv: n, date: inv.date, item: it.productName, qty: it.quantity,
-      price: it.unitPrice, sub: it.subtotal, invTotal: i === 0 ? inv.total : null }));
+      price: it.unitPrice, sub: it.subtotal, invDisc: i === 0 && inv.discount > 0 ? inv.discount : null, invTotal: i === 0 ? inv.total : null }));
   });
   xlTable(wb, sheetName || 'تفاصيل الفواتير', {
     title: 'تفاصيل فواتير العميل: ' + c.name, subtitle: _sub(all), groupKey: 'g',
     cols: [{ h: 'رقم الفاتورة', k: 'inv', w: 11, t: 'int' }, { h: 'التاريخ', k: 'date', w: 20, t: 'date' }, { h: 'الصنف', k: 'item', w: 30 },
       { h: 'الكمية', k: 'qty', w: 10, t: 'qty' }, { h: 'سعر الوحدة', k: 'price', w: 14, t: 'money' }, { h: 'إجمالي الصنف', k: 'sub', w: 16, t: 'money' },
-      { h: 'إجمالي الفاتورة', k: 'invTotal', w: 17, t: 'money', color: 'debit' }],
-    rows, total: { label: 'الإجمالي', labelKey: 'item', sums: ['sub', 'invTotal'] },
+      { h: 'خصم الفاتورة', k: 'invDisc', w: 14, t: 'money', color: 'credit' }, { h: 'صافي الفاتورة', k: 'invTotal', w: 17, t: 'money', color: 'debit' }],
+    rows, total: { label: 'الإجمالي', labelKey: 'item', sums: ['sub', 'invDisc', 'invTotal'] },
   });
 }
 // الفواتير: صف واحد لكل فاتورة (بكل أصنافها في خانة التفاصيل)
 function _clientInvRows(c, f, withName){
   const bm = _clientBalMap(c);
   return c.invoices.filter(i => f(i.date)).sort((a, b) => new Date(a.date) - new Date(b.date)).map((inv, i) => ({
-    who: c.name, n: i + 1, date: inv.date, items: _invText(inv), cnt: inv.items.length, qty: sumBy(inv.items, x => x.quantity), total: inv.total, bal: bm[inv.id] }));
+    who: c.name, n: i + 1, date: inv.date, items: _invText(inv), cnt: inv.items.length, qty: sumBy(inv.items, x => x.quantity),
+    gross: r2(inv.total + (inv.discount || 0)), disc: inv.discount > 0 ? inv.discount : null, total: inv.total, bal: bm[inv.id] }));
 }
 const _clientInvCols = (withName) => [].concat(withName ? [{ h: 'العميل', k: 'who', w: 22 }] : [],
   [{ h: '#', k: 'n', w: 6, t: 'int' }, { h: 'التاريخ', k: 'date', w: 20, t: 'date' }, { h: 'الأصناف (تفاصيل الفاتورة)', k: 'items', w: 52, wrap: true },
-   { h: 'عدد الأصناف', k: 'cnt', w: 11, t: 'int' }, { h: 'إجمالي الكميات', k: 'qty', w: 13, t: 'qty' }, { h: 'قيمة الفاتورة', k: 'total', w: 16, t: 'money', color: 'debit' },
+   { h: 'عدد الأصناف', k: 'cnt', w: 11, t: 'int' }, { h: 'إجمالي الكميات', k: 'qty', w: 13, t: 'qty' }, { h: 'إجمالي الأصناف', k: 'gross', w: 16, t: 'money' },
+   { h: 'الخصم', k: 'disc', w: 13, t: 'money', color: 'credit' }, { h: 'صافي الفاتورة', k: 'total', w: 16, t: 'money', color: 'debit' },
    { h: 'المتبقي على العميل بعد الفاتورة', k: 'bal', w: 22, t: 'money', color: 'sign' }]);
 function _clientPayRows(c, f){
   const bm = _clientBalMap(c);
@@ -113,7 +115,7 @@ function _clientPayments(wb, c, f, all, sheetName){
 function _clientInvoices(wb, c, f, all, sheetName){
   xlTable(wb, sheetName || 'الفواتير', {
     title: 'فواتير العميل: ' + c.name + ' (صف لكل فاتورة)', subtitle: _sub(all),
-    cols: _clientInvCols(false), rows: _clientInvRows(c, f), total: { label: 'الإجمالي', labelKey: 'items', sums: ['cnt', 'qty', 'total'] },
+    cols: _clientInvCols(false), rows: _clientInvRows(c, f), total: { label: 'الإجمالي', labelKey: 'items', sums: ['cnt', 'qty', 'gross', 'disc', 'total'] },
   });
 }
 // حساب عميل واحد بس
@@ -143,15 +145,15 @@ function exportAll(all){
       rows: sumRows, total: { label: 'الإجمالي', labelKey: 'who', sums: ['inv', 'pay', 'bal'] },
     });
     xlTable(wb, 'كل الفواتير', { title: 'كل فواتير العملاء (صف لكل فاتورة)', subtitle: _sub(all), cols: _clientInvCols(true),
-      rows: state.clients.flatMap(c => _clientInvRows(c, f)), total: { label: 'الإجمالي', labelKey: 'items', sums: ['cnt', 'qty', 'total'] } });
+      rows: state.clients.flatMap(c => _clientInvRows(c, f)), total: { label: 'الإجمالي', labelKey: 'items', sums: ['cnt', 'qty', 'gross', 'disc', 'total'] } });
     const all1 = [];
     state.clients.forEach(c => { let n = 0; c.invoices.filter(i => f(i.date)).sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(inv => { n++;
-      inv.items.forEach((it, i) => all1.push({ who: c.name, g: c.id + n, inv: n, date: inv.date, item: it.productName, qty: it.quantity, price: it.unitPrice, sub: it.subtotal, invTotal: i === 0 ? inv.total : null })); }); });
+      inv.items.forEach((it, i) => all1.push({ who: c.name, g: c.id + n, inv: n, date: inv.date, item: it.productName, qty: it.quantity, price: it.unitPrice, sub: it.subtotal, invDisc: i === 0 && inv.discount > 0 ? inv.discount : null, invTotal: i === 0 ? inv.total : null })); }); });
     xlTable(wb, 'تفاصيل الأصناف', { title: 'تفاصيل أصناف كل الفواتير (صف لكل صنف)', subtitle: _sub(all), groupKey: 'g',
       cols: [{ h: 'العميل', k: 'who', w: 22 }, { h: 'رقم الفاتورة', k: 'inv', w: 11, t: 'int' }, { h: 'التاريخ', k: 'date', w: 20, t: 'date' }, { h: 'الصنف', k: 'item', w: 28 },
         { h: 'الكمية', k: 'qty', w: 10, t: 'qty' }, { h: 'سعر الوحدة', k: 'price', w: 14, t: 'money' }, { h: 'إجمالي الصنف', k: 'sub', w: 16, t: 'money' },
-        { h: 'إجمالي الفاتورة', k: 'invTotal', w: 17, t: 'money', color: 'debit' }],
-      rows: all1, total: { label: 'الإجمالي', labelKey: 'item', sums: ['sub', 'invTotal'] } });
+        { h: 'خصم الفاتورة', k: 'invDisc', w: 14, t: 'money', color: 'credit' }, { h: 'صافي الفاتورة', k: 'invTotal', w: 17, t: 'money', color: 'debit' }],
+      rows: all1, total: { label: 'الإجمالي', labelKey: 'item', sums: ['sub', 'invDisc', 'invTotal'] } });
     xlTable(wb, 'كل الدفعات', { title: 'كل دفعات العملاء', subtitle: _sub(all), cols: _clientPayCols(true),
       rows: state.clients.flatMap(c => _clientPayRows(c, f)).sort((a, b) => new Date(a.date) - new Date(b.date)), total: { label: 'الإجمالي', labelKey: 'who', sums: ['amount'] } });
     state.clients.forEach(c => _clientStatement(wb, c, f, all, c.name));

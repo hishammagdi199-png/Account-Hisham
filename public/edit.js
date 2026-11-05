@@ -82,14 +82,15 @@ function editSupplierTxn(supplierId, txnId){
 let _invEd = null;
 function editInvoice(clientId, invoiceId){
   const c = getClient(clientId); const inv = c && c.invoices.find(i => i.id === invoiceId); if (!inv) return;
-  _invEd = { clientId, invoiceId, day: localDateStr(inv.date),
+  _invEd = { clientId, invoiceId, day: localDateStr(inv.date), disc: inv.discount ? String(inv.discount) : '',
     rows: inv.items.map(it => ({ k: newId(), productId: it.productId || '', productName: it.productName, qty: String(it.quantity), price: String(it.unitPrice) })) };
   renderInvEditor();
 }
 const _ieSub = (r) => { const q = num(r.qty), p = num(r.price); return (isNaN(q) || isNaN(p)) ? 0 : Math.round(q * p * 100) / 100; };
+function _ieNet(){ const g = r2(sumBy(_invEd.rows, _ieSub)), d = Math.min(discNum(_invEd.disc), g); return { g, d, net: r2(g - d) }; }
 function _ieTotals(){
-  const t = r2(sumBy(_invEd.rows, _ieSub));
-  const el = document.getElementById('ieTotal'); if (el) el.textContent = fmt(t) + ' ج';
+  const n = _ieNet();
+  const el = document.getElementById('ieTotal'); if (el) el.innerHTML = (n.d > 0 ? fmt(n.g) + ' − خصم ' + fmt(n.d) + ' = ' : '') + fmt(n.net) + ' ج';
   _invEd.rows.forEach(r => { const s = document.getElementById('ieSub_' + r.k); if (s) s.textContent = fmt(_ieSub(r)) + ' ج'; });
 }
 function invEdSet(k, field, v){ const r = _invEd.rows.find(x => x.k === k); if (r) { r[field] = v; _ieTotals(); } }
@@ -123,8 +124,11 @@ function renderInvEditor(){
     <div class="ie-head"><span>الصنف</span><span>الكمية</span><span>سعر الوحدة</span><span>الإجمالي</span><span></span></div>
     ${ed.rows.map(rowHtml).join('')}
     <button class="btn btn-ghost" style="margin-top:8px;" onclick="invEdAdd()">+ إضافة صنف</button>
-    <div class="modal-body" style="margin-top:12px;"><div><label>تاريخ الفاتورة</label><input type="date" id="ieDay" value="${esc(ed.day)}" onchange="_invEd.day=this.value"></div></div>
-    <div class="inv-sum" style="font-size:15px;"><span>إجمالي الفاتورة: <b id="ieTotal">${fmt(r2(sumBy(ed.rows, _ieSub)))} ج</b></span></div>
+    <div class="modal-body" style="margin-top:12px;grid-template-columns:1fr 1fr;">
+      <div><label>تاريخ الفاتورة</label><input type="date" id="ieDay" value="${esc(ed.day)}" onchange="_invEd.day=this.value"></div>
+      <div><label>خصم من الفاتورة (اختياري)</label><input type="text" inputmode="decimal" autocomplete="off" placeholder="مثال: 50" value="${esc(ed.disc)}" oninput="_invEd.disc=this.value;_ieTotals()"></div>
+    </div>
+    <div class="inv-sum" style="font-size:15px;"><span>الصافي: <b id="ieTotal">${(() => { const n = _ieNet(); return (n.d > 0 ? fmt(n.g) + ' − خصم ' + fmt(n.d) + ' = ' : '') + fmt(n.net) + ' ج'; })()}</b></span></div>
     <div class="modal-act"><button class="btn btn-ghost" onclick="closeEditModal()">إلغاء</button><button class="btn btn-cheese" id="ieSave" onclick="saveInvEditor()">حفظ التعديل</button></div>
   </div>`;
   document.body.appendChild(ov);
@@ -143,7 +147,8 @@ async function saveInvEditor(){
     if (isNaN(p) || p < 0) { showToast('اكتب سعر الوحدة في كل الصفوف'); return; }
     items.push({ productId: r.productId || null, productName: r.productName, quantity: q, unitPrice: p });
   }
-  const body = { items };
+  const body = { items, discount: discNum(ed.disc) };
+  if (body.discount > _ieNet().g + 0.001) { showToast('الخصم أكبر من إجمالي الأصناف'); return; }
   const dt = composeDate(ed.day, inv.date); if (dt) body.date = dt;
   try {
     const json = await apiFetch('invoices/' + ed.invoiceId, 'PUT', body);

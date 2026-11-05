@@ -423,8 +423,6 @@ function renderSupplierView(){
   const s = getSupplier(currentSupplierId);
   if (!s) { goView('suppliers'); return; }
   const bal = supplierBalance(s);
-  const goods = sumBy(s.txns.filter(t => t.kind === 'goods'), t => t.amount);
-  const paid = sumBy(s.txns.filter(t => t.kind === 'payment'), t => t.amount);
   app.innerHTML = `
   <div class="top-bar"><button class="back-btn" onclick="goView('suppliers')">→ كل الموردين</button></div>
   <header class="top" style="margin-top:6px;">
@@ -437,11 +435,9 @@ function renderSupplierView(){
       <div class="balance-main">
         <div class="label">${bal > 0 ? 'مطلوب للمورد (علينا)' : (bal < 0 ? 'رصيد لينا عند المورد' : 'الحساب متزن')}</div>
         <div class="amount ${bal > 0 ? 'owe' : (bal < 0 ? 'credit' : 'even')}">${fmt(Math.abs(bal))} ج</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-top:3px;">الرصيد الكلي لحد دلوقتي (مش بيتغير بالتاريخ)</div>
       </div>
-      <div class="mini-stats">
-        <div><div class="n" style="color:var(--debit)">${fmt(goods)}</div><div class="l">إجمالي البضاعة</div></div>
-        <div><div class="n" style="color:var(--credit)">${fmt(paid)}</div><div class="l">إجمالي المدفوع</div></div>
-      </div>
+      <div class="mini-stats" id="supStats"></div>
     </div>
   </div>
 
@@ -555,9 +551,18 @@ async function addSupplierPayment(){
     showToast('اتسجلت الدفعة');
   } catch (e) {}
 }
+// إجمالي البضاعة والمدفوع للفترة المختارة
+function updateSupplierStats(){
+  const el = document.getElementById('supStats'); const s = getSupplier(currentSupplierId); if (!el || !s) return;
+  const goods = sumBy(s.txns.filter(t => t.kind === 'goods' && inRange(t.date)), t => t.amount);
+  const paid = sumBy(s.txns.filter(t => t.kind === 'payment' && inRange(t.date)), t => t.amount);
+  el.innerHTML = `<div><div class="n" style="color:var(--debit)">${fmt(goods)}</div><div class="l">إجمالي البضاعة — ${rangeLabel()}</div></div>
+    <div><div class="n" style="color:var(--credit)">${fmt(paid)}</div><div class="l">إجمالي المدفوع — ${rangeLabel()}</div></div>`;
+}
 function renderSupplierHistory(){
   const box = document.getElementById('supHistory'); if (!box) return;
   const s = getSupplier(currentSupplierId); if (!s) return;
+  updateSupplierStats();
   const txns = s.txns.filter(t => inRange(t.date)).sort((a, b) => new Date(b.date) - new Date(a.date));
   box.innerHTML = `
     <div class="stage-note" style="margin:0 0 10px;">المعروض: <b>${rangeLabel()}</b> —
@@ -607,12 +612,9 @@ function renderCash(){
   const app = document.getElementById('app');
   const all = cashMovements();
   const balance = sumBy(all, m => m.dir === 'in' ? m.amount : -m.amount);
-  const rows = all.filter(m => inRange(m.date));
-  const totIn = sumBy(rows.filter(m => m.dir === 'in'), m => m.amount);
-  const totOut = sumBy(rows.filter(m => m.dir === 'out'), m => m.amount);
-  const byReason = {};
-  rows.filter(m => m.src === 'manual' && m.dir === 'out').forEach(m => { const k = (m.detail || 'بدون سبب').trim(); byReason[k] = (byReason[k] || 0) + m.amount; });
-  const reasons = Object.entries(byReason).sort((a, b) => b[1] - a[1]);
+  const rangeRows = all.filter(m => inRange(m.date));
+  const totIn = sumBy(rangeRows.filter(m => m.dir === 'in'), m => m.amount);
+  const totOut = sumBy(rangeRows.filter(m => m.dir === 'out'), m => m.amount);
 
   app.innerHTML = `
   <header class="top"><h1>الخزنة</h1><p>الفلوس اللي معاك — الداخل من التحصيل والخارج للموردين والمصروفات</p></header>
@@ -649,8 +651,30 @@ function renderCash(){
 
   <div class="card">
     <h2>الحركات — ${rangeLabel()}</h2>
-    ${reasons.length ? `<div class="chips">${reasons.map(([r, v]) => `<span class="chip">${esc(r)}: ${fmt(v)} ج</span>`).join('')}</div>` : ''}
-    ${rows.length ? rows.map(m => `
+    <div id="cashListBox"></div>
+  </div>`;
+  renderCashList();
+}
+let cashFilter = 'all';   // all | in | out
+function setCashFilter(f){ cashFilter = f; renderCashList(); }
+function filterChipsHtml(cur, fn, counts){
+  const chips = [['all', 'الكل', counts.all], ['in', 'إيداعات', counts.in], ['out', 'مصروفات', counts.out]];
+  return '<div class="fchips">' + chips.map(([k, label, c]) =>
+    `<button class="${cur === k ? 'on' : ''} ${k}" onclick="${fn}('${k}')">${label} <span>${c}</span></button>`).join('') + '</div>';
+}
+function renderCashList(){
+  const box = document.getElementById('cashListBox'); if (!box) return;
+  const all = cashMovements().filter(m => inRange(m.date));
+  const rows = cashFilter === 'all' ? all : all.filter(m => m.dir === cashFilter);
+  const sum = sumBy(rows, m => m.amount);
+  const byReason = {};
+  rows.filter(m => m.src === 'manual' && m.dir === 'out').forEach(m => { const k = (m.detail || 'بدون سبب').trim(); byReason[k] = (byReason[k] || 0) + m.amount; });
+  const reasons = Object.entries(byReason).sort((a, b) => b[1] - a[1]);
+  const counts = { all: all.length, in: all.filter(m => m.dir === 'in').length, out: all.filter(m => m.dir === 'out').length };
+  box.innerHTML = filterChipsHtml(cashFilter, 'setCashFilter', counts) +
+    (cashFilter !== 'all' ? `<div class="stage-note" style="margin:0 0 10px;">${cashFilter === 'in' ? 'إجمالي الإيداعات (الداخل)' : 'إجمالي المصروفات (الخارج)'} في ${rangeLabel()}: <b>${fmt(sum)} ج</b> (${rows.length} حركة)</div>` : '') +
+    (reasons.length ? `<div class="chips">${reasons.map(([r, v]) => `<span class="chip">${esc(r)}: ${fmt(v)} ج</span>`).join('')}</div>` : '') +
+    (rows.length ? rows.map(m => `
       <div class="payment-line" style="background:${m.dir === 'in' ? '#F5FAF7' : '#FBF3EF'};">
         <div>
           <span class="tag ${m.dir === 'in' ? 'payment' : 'item'}">${m.dir === 'in' ? 'داخل' : 'خارج'}</span>
@@ -662,8 +686,7 @@ function renderCash(){
           <span class="${m.dir === 'in' ? 'amt-minus' : 'amt-plus'}">${m.dir === 'in' ? '+' : '-'} ${fmt(m.amount)} ج</span>
           ${m.src === 'manual' ? `<button class="edit-btn" onclick="editCashEntry('${m.id}')" title="تعديل">✎</button><button class="del-btn" onclick="deleteCashEntry('${m.id}')">✕</button>` : ''}
         </div>
-      </div>`).join('') : '<div class="empty">مفيش حركات في الفترة دي</div>'}
-  </div>`;
+      </div>`).join('') : `<div class="empty">مفيش ${cashFilter === 'in' ? 'إيداعات' : (cashFilter === 'out' ? 'مصروفات' : 'حركات')} في الفترة دي</div>`);
 }
 async function addCashEntry(){
   const amount = num(document.getElementById('cAmount').value) || 0;

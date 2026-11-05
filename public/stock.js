@@ -61,12 +61,15 @@ function monthStock(m){
   }));
   state.clients.forEach(c => c.invoices.forEach(inv => {
     if (monthOf(inv.date) !== m) return;
+    // الخصم بيتوزّع على أصناف الفاتورة بالنسبة، فالأرباح بتتحسب بعد الخصم
+    const gross = sumBy(inv.items, x => numOrQty(x.subtotal != null ? x.subtotal : x.quantity * x.unitPrice));
+    const k = inv.discount > 0 && gross > 0 ? Math.max(0, (gross - inv.discount) / gross) : 1;
     inv.items.forEach(it => {
       if (isStockExcluded(it.productId, it.productName)) return;
       const r = row(it.productId, it.productName);
       r.name = it.productName || r.name;
       r.soldQty += numOrQty(it.quantity);
-      r.soldRev += numOrQty(it.subtotal != null ? it.subtotal : it.quantity * it.unitPrice);
+      r.soldRev += numOrQty(it.subtotal != null ? it.subtotal : it.quantity * it.unitPrice) * k;
       if (it.unitPrice) r.lastSell = it.unitPrice;
     });
   }));

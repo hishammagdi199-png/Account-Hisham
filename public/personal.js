@@ -16,14 +16,22 @@ const lenderKey = (n) => norm(n).trim();
 // kind: 'debt' = اللي عليّ (استلفت/سدّدت) | 'owed' = اللي ليا عند الناس (أخدوا مني/رجّعوا)
 function loansSummary(kind){
   const first = kind === 'owed' ? 'lend' : 'borrow', second = kind === 'owed' ? 'collect' : 'repay';
-  const m = {};
+  const byKey = {};
   state.personal.filter(e => e.loan === first || e.loan === second).sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(e => {
     const k = lenderKey(e.party) || '—';
-    const o = (m[k] ||= { key: k, name: (e.party || '').trim() || '—', borrowed: 0, repaid: 0, events: [] });
-    if (e.loan === first) o.borrowed += e.amount; else o.repaid += e.amount;
-    o.events.push(e);
+    (byKey[k] ||= { key: k, name: (e.party || '').trim() || '—', events: [] }).events.push(e);
   });
-  return Object.values(m).map(o => ({ ...o, remaining: r2(o.borrowed - o.repaid) })).sort((a, b) => b.remaining - a.remaining);
+  const out = [];
+  Object.values(byKey).forEach(o => {
+    // السلفة اللي اتسددت خالص (الرصيد رجع صفر) بتتشال من الكارت. ولو أخدت سلفة جديدة بعدها بتبدأ من الصفر.
+    let run = 0, cut = 0;
+    o.events.forEach((e, i) => { run += e.loan === first ? e.amount : -e.amount; if (Math.abs(run) < 0.005) cut = i + 1; });
+    const ev = o.events.slice(cut);
+    if (!ev.length) return;                         // خلصت خالص → ماتفضلش موجودة
+    const borrowed = sumBy(ev.filter(e => e.loan === first), e => e.amount), repaid = sumBy(ev.filter(e => e.loan === second), e => e.amount);
+    out.push({ key: o.key, name: o.name, borrowed, repaid, events: ev, remaining: r2(borrowed - repaid) });
+  });
+  return out.sort((a, b) => b.remaining - a.remaining);
 }
 const loansTotal = (kind) => r2(sumBy(loansSummary(kind), l => (l.remaining > 0 ? l.remaining : 0)));
 function dayToIso(day){
@@ -32,9 +40,11 @@ function dayToIso(day){
   return new Date(y, m - 1, d, t.getHours(), t.getMinutes(), t.getSeconds()).toISOString();
 }
 
+let personalFilter = 'all';   // all | in | out
+function setPersonalFilter(f){ personalFilter = f; renderPersonalList(); }
 function personalFiltered(){
   const n = norm(searchQ).trim();
-  return state.personal.filter(e => inRange(e.date)).filter(e => {
+  return state.personal.filter(e => inRange(e.date)).filter(e => personalFilter === 'all' || e.type === personalFilter).filter(e => {
     if (!n) return true;
     return norm(e.party).includes(n) || norm(e.category).includes(n) || norm(e.note).includes(n) ||
            (e.loan && norm('سلفة ليا عند حد استلام سداد').includes(n)) || (/^\d+(\.\d+)?$/.test(n) && String(e.amount).includes(n));
@@ -46,11 +56,11 @@ const LEDGER = {
   debt: { title: '💳 السلف (اللي عليّ)', totalLabel: 'إجمالي اللي عليك', first: 'استلفت', second: 'سدّدت', amtPrefix: 'عليك', btn: 'سداد', doneText: 'اتسدّدت ✓',
           tagFirst: 'استلفت', tagSecond: 'سدّدت', firstCls: 'amt-plus', more: '+ استلفت تاني',
           empty: 'لسه مفيش سلف. لما تسجّل إيداع وتكتب «سلفة» في الجهة أو التصنيف أو الملاحظات، هتتسجل هنا لوحدها وتعرف عليك قد إيه ولمين.',
-          foot: 'السلفة بتفضل ثابتة لحد ما تسدّدها بزرار «سداد».' },
+          foot: 'السلفة بتفضل ثابتة لحد ما تسدّدها بزرار «سداد». ولما تخلص خالص بتتشال من هنا لوحدها (والحركات بتفضل في سجل حسابي).' },
   owed: { title: '💰فلوس ليا برا ', totalLabel: 'إجمالي اللي ليك', first: 'أخدوا منك', second: 'رجّعوا لك', amtPrefix: 'ليك', btn: 'استلام', doneText: 'اتسلّمت ✓',
           tagFirst: 'أخد منك', tagSecond: 'رجّع لك', firstCls: 'amt-lend', more: '+ سلّفته تاني',
           empty: 'لسه مفيش فلوس ليك عند حد. دوس «+ إضافة» وسجّل اسم الشخص والمبلغ.',
-          foot: 'الفلوس دي بتفضل ظاهرة لحد ما تسجّل «استلام» وتخصمها.' },
+          foot: 'الفلوس دي بتفضل ظاهرة لحد ما تسجّل «استلام» وتخصمها. ولما تخلص خالص بتتشال من هنا لوحدها (والحركات بتفضل في سجل حسابي).' },
 };
 function ledgerCardHtml(kind){
   const T = LEDGER[kind], L = loansSummary(kind), total = loansTotal(kind);
@@ -304,6 +314,8 @@ function renderPersonalList(){
   const box = document.getElementById('personalList'); if (!box) return;
   const rows = personalFiltered();
   const q = searchQ.trim();
+  const base = state.personal.filter(e => inRange(e.date));
+  const counts = { all: base.length, in: base.filter(e => e.type === 'in').length, out: base.filter(e => e.type === 'out').length };
   const out = sumBy(rows, pOut);
   const inn = sumBy(rows, pIn);
   const byCat = {};
@@ -312,6 +324,8 @@ function renderPersonalList(){
   const tagOf = (e) => ({ borrow: 'سلفة', repay: 'سداد سلفة', lend: 'ليا عند حد', collect: 'استلام' }[e.loan] || (e.type === 'in' ? 'إيداع' : 'مصروف'));
 
   box.innerHTML = `
+    ${filterChipsHtml(personalFilter, 'setPersonalFilter', counts)}
+    ${personalFilter !== 'all' ? `<div class="stage-note" style="margin:0 0 10px;">${personalFilter === 'in' ? 'إجمالي الإيداعات' : 'إجمالي المصروفات'} في ${rangeLabel()}: <b>${fmt(personalFilter === 'in' ? inn : out)} ج</b> (${rows.length} حركة)</div>` : ''}
     ${q ? `<div class="stage-note" style="margin:0 0 10px;">نتيجة البحث عن «${esc(q)}»: ${rows.length} حركة • إيداع ${fmt(inn)} ج • مصروف ${fmt(out)} ج</div>` : ''}
     ${cats.length ? `<div class="chips">${cats.map(([c, v]) => `<span class="chip">${esc(c)}: ${fmt(v)} ج</span>`).join('')}</div>` : ''}
     ${rows.length ? rows.map(e => `

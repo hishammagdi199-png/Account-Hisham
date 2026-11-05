@@ -295,14 +295,16 @@ async function confirmStaged(){
     if(items.length){
       const invItems = items.map(s=>({productId:s.productId, quantity:s.quantity, unitPrice:s.unitPrice}));
       const rawText = items.map(s=>s.note).join('\n');
-      const json = await apiFetch('clients/'+client.id+'/invoices', 'POST', { items: invItems, rawText, date: dateForNew() });
+      const disc = discNum(stagedDisc);
+      if(disc > stagedGross() + 0.001){ showToast('الخصم أكبر من إجمالي الأصناف'); return; }
+      const json = await apiFetch('clients/'+client.id+'/invoices', 'POST', { items: invItems, rawText, date: dateForNew(), discount: disc });
       client.invoices.push(json.invoice);
     }
     for(const p of payments){
       const json = await apiFetch('clients/'+client.id+'/payments', 'POST', { amount: p.amount, note: p.note, date: dateForNew() });
       client.payments.push(json.payment);
     }
-    staged=[];
+    staged=[]; stagedDisc='';
     document.getElementById('pasteArea').value='';
     renderClientView();
     showToast('تم تسجيل العملية');
@@ -343,9 +345,11 @@ async function saveDraftInvoice(){
   const client = getClient(currentClientId); if(!client) return;
   try{
     const invItems = draftItems.map(d=>({productId:d.productId, quantity:d.quantity, unitPrice:d.unitPrice}));
-    const json = await apiFetch('clients/'+client.id+'/invoices', 'POST', { items: invItems, rawText: 'إضافة يدوية', date: dateForNew() });
+    const disc = discNum(draftDisc);
+    if(disc > draftGross() + 0.001){ showToast('الخصم أكبر من إجمالي الفاتورة'); return; }
+    const json = await apiFetch('clients/'+client.id+'/invoices', 'POST', { items: invItems, rawText: 'إضافة يدوية', date: dateForNew(), discount: disc });
     client.invoices.push(json.invoice);
-    draftItems=[];
+    draftItems=[]; draftDisc='';
     renderClientView();
     showToast('اتحفظت الفاتورة');
   }catch(e){}
@@ -600,13 +604,31 @@ function renderStaged(){
         </tr>
       `).join('')}
     </table>
+    <div class="f-grid" style="margin-top:10px;max-width:420px;">
+      <div><label>خصم من الفاتورة (اختياري)</label><input type="text" inputmode="decimal" autocomplete="off" placeholder="مثال: 50" value="${esc(stagedDisc)}" oninput="stagedDisc=this.value;updateStagedNet()"></div>
+    </div>
+    <div class="stage-note" id="stagedNet" style="margin:8px 0 0;"></div>
     <div class="row-actions">
       <button class="btn btn-cheese" onclick="confirmStaged()">✓ تأكيد وإضافة للحساب</button>
       <button class="btn btn-ghost" onclick="discardStaged()">إلغاء</button>
     </div>
   `;
+  updateStagedNet();
 }
 
+// الخصم: رقم صفر أو أكتر (بيقبل أرقام عربي وإنجليزي)
+const discNum = (v) => { const x = num(v); return isNaN(x) || x < 0 ? 0 : Math.round(x * 100) / 100; };
+let draftDisc = '', stagedDisc = '';
+function draftGross(){ return Math.round(draftItems.reduce((s, d) => s + d.unitPrice * d.quantity, 0) * 100) / 100; }
+function updateDraftNet(){
+  const g = draftGross(), d = Math.min(discNum(draftDisc), g);
+  const el = document.getElementById('draftNet'); if (el) el.innerHTML = (d > 0 ? `<span style="color:var(--ink-soft);font-weight:400;">${fmt(g)} − خصم ${fmt(d)} = </span>` : '') + `الصافي: ${fmt(g - d)} ج`;
+}
+function stagedGross(){ return Math.round(staged.filter(s => s.type === 'item' && s.productId).reduce((t, s) => t + (s.amount || 0), 0) * 100) / 100; }
+function updateStagedNet(){
+  const g = stagedGross(), d = Math.min(discNum(stagedDisc), g);
+  const el = document.getElementById('stagedNet'); if (el) el.innerHTML = d > 0 ? `${fmt(g)} − خصم ${fmt(d)} = <b>${fmt(g - d)} ج</b>` : (g ? `إجمالي الأصناف: <b>${fmt(g)} ج</b>` : '');
+}
 function renderDraft(){
   const area = document.getElementById('draftList'); if(!area) return;
   if(!draftItems.length){ area.innerHTML=''; return; }
@@ -619,10 +641,14 @@ function renderDraft(){
   }).join('');
   area.innerHTML = `
     <table><tr><th>الصنف</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th><th></th></tr>${rows}</table>
+    <div class="f-grid" style="margin-top:10px;max-width:420px;">
+      <div><label>خصم من الفاتورة (اختياري)</label><input type="text" inputmode="decimal" autocomplete="off" id="draftDiscount" placeholder="مثال: 50" value="${esc(draftDisc)}" oninput="draftDisc=this.value;updateDraftNet()"></div>
+    </div>
     <div class="row-actions">
-      <div style="font-weight:700;">الإجمالي: ${fmt(total)} ج</div>
+      <div style="font-weight:700;" id="draftNet"></div>
       <button class="btn btn-cheese btn-sm" onclick="saveDraftInvoice()">حفظ الفاتورة</button>
     </div>`;
+  updateDraftNet();
 }
 
 function renderHistory(){
@@ -641,7 +667,7 @@ function renderHistory(){
         <div class="invoice-head"><span class="tag item">فاتورة</span><span class="dt">${dateStr}</span></div>
         <table>${e.ref.items.map(it=>`<tr><td>${esc(it.productName)}</td><td>x${it.quantity}</td><td>${fmt(it.unitPrice)} ج</td><td>${fmt(it.subtotal)} ج</td></tr>`).join('')}</table>
         <div class="invoice-head" style="margin-top:6px;margin-bottom:0;">
-          <span class="invoice-total">الإجمالي: ${fmt(e.ref.total)} ج</span>
+          <span class="invoice-total">${e.ref.discount>0 ? `<span style="font-weight:400;font-size:12.5px;color:var(--ink-soft);">أصناف ${fmt(e.ref.total+e.ref.discount)} − خصم ${fmt(e.ref.discount)} • </span>` : ''}الصافي: ${fmt(e.ref.total)} ج</span>
           <span><button class="edit-btn" onclick="editInvoice('${client.id}','${e.ref.id}')">تعديل الفاتورة ✎</button>
           <button class="del-btn" onclick="deleteInvoice('${e.ref.id}')">حذف الفاتورة ✕</button></span>
         </div>
