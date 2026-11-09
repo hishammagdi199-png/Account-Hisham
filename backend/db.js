@@ -88,7 +88,7 @@ async function _ensureSchema() {
     CREATE TABLE IF NOT EXISTS supplier_txns (
       id          TEXT PRIMARY KEY,
       supplier_id TEXT NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
-      kind        TEXT NOT NULL CHECK (kind IN ('goods','payment')),
+      kind        TEXT NOT NULL CHECK (kind IN ('goods','payment','advance')),
       amount      NUMERIC(12,2) NOT NULL DEFAULT 0,
       note        TEXT,
       from_cash   BOOLEAN NOT NULL DEFAULT TRUE,
@@ -113,6 +113,12 @@ async function _ensureSchema() {
       date        TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS app_seeds (name TEXT PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'supplier_txns'::regclass AND contype = 'c' AND pg_get_constraintdef(oid) LIKE '%advance%') THEN
+        ALTER TABLE supplier_txns DROP CONSTRAINT IF EXISTS supplier_txns_kind_check;
+        ALTER TABLE supplier_txns ADD CONSTRAINT supplier_txns_kind_check CHECK (kind IN ('goods','payment','advance'));
+      END IF;
+    END $$;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_excluded BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE invoices ADD COLUMN IF NOT EXISTS discount NUMERIC(12,2) NOT NULL DEFAULT 0;
     CREATE TABLE IF NOT EXISTS stock_adjust (
@@ -451,7 +457,7 @@ async function deleteSupplier(id) {
 }
 async function createSupplierTxn(supplierId, { kind, amount, note, fromCash, items, date }) {
     await ensureSchema();
-    if (kind !== 'goods' && kind !== 'payment') throw new Error('نوع العملية غير صحيح');
+    if (kind !== 'goods' && kind !== 'payment' && kind !== 'advance') throw new Error('نوع العملية غير صحيح');
     const pool = getPool();
     let amt = numOr0(amount);
     let itemsJson = null;
@@ -584,7 +590,7 @@ async function updateSupplierTxn(id, { amount, note, fromCash, date }) {
     // فاتورة البضاعة اللي فيها أصناف مبلغها بيتحسب من الأصناف، فمنعدّلوش
     if (amount !== undefined && !(cur.rows[0].kind === 'goods' && cur.rows[0].items)) sets.amount = checkAmount(amount);
     if (note !== undefined) sets.note = String(note);
-    if (fromCash !== undefined && cur.rows[0].kind === 'payment') sets.from_cash = !!fromCash;
+    if (fromCash !== undefined && (cur.rows[0].kind === 'payment' || cur.rows[0].kind === 'advance')) sets.from_cash = !!fromCash;
     if (date) sets.date = pickDate(date).toISOString();
     return mapTxn(await updateRow('supplier_txns', id, sets));
 }

@@ -66,11 +66,12 @@ function editSupplierTxn(supplierId, txnId){
   else fields.push({ key: 'amount', label: 'المبلغ', type: 'num', value: t.amount });
   fields.push({ key: 'note', label: 'الملاحظة / البيان', type: 'area', value: t.note });
   if (t.kind === 'payment') fields.push({ key: 'fromCash', label: 'تتخصم من الخزنة', type: 'check', value: t.fromCash });
+  if (t.kind === 'advance') fields.push({ key: 'fromCash', label: 'اتضافت على الخزنة (الفلوس دخلت الخزنة)', type: 'check', value: t.fromCash });
   fields.push({ key: 'day', label: 'التاريخ', type: 'date', value: localDateStr(t.date) });
-  openEditModal({ title: (t.kind === 'goods' ? 'تعديل فاتورة بضاعة — ' : 'تعديل دفعة — ') + s.name, fields, onSave: async (v) => {
+  openEditModal({ title: (t.kind === 'goods' ? 'تعديل فاتورة بضاعة — ' : (t.kind === 'advance' ? 'تعديل سلفة من المورد — ' : 'تعديل دفعة — ')) + s.name, fields, onSave: async (v) => {
     const body = { note: v.note };
     if (!hasItems) { if (_badAmount(v.amount)) { showToast('اكتب مبلغ صحيح'); throw new Error('amount'); } body.amount = v.amount; }
-    if (t.kind === 'payment') body.fromCash = v.fromCash;
+    if (t.kind === 'payment' || t.kind === 'advance') body.fromCash = v.fromCash;
     const dt = composeDate(v.day, t.date); if (dt) body.date = dt;
     const json = await apiFetch('supplier-txns/' + txnId, 'PUT', body);
     Object.assign(t, json.txn); render(); showToast('اتعدّلت العملية');

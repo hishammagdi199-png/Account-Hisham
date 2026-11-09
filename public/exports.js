@@ -20,7 +20,7 @@ function _clientBalMap(c){
 }
 function _supBalMap(s){
   let run = 0; const m = {};
-  s.txns.slice().sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(t => { run += t.kind === 'goods' ? t.amount : -t.amount; m[t.id] = r2(run); });
+  s.txns.slice().sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(t => { run += t.kind === 'payment' ? -t.amount : t.amount; m[t.id] = r2(run); });
   return m;
 }
 const _idxL = (cols, key) => _colL(cols.findIndex(c => c.k === key) + 1);
@@ -212,33 +212,35 @@ const _supText = (t) => {
     const hasItems = t.items && t.items.length;
     return (hasItems ? _supItemsText(t.items) : (t.note || 'بضاعة')) + ((hasItems && t.note) ? '\nملاحظة: ' + t.note : '');
   }
+  if (t.kind === 'advance') return (t.note ? 'سلفة نقدية — ' + t.note : 'سلفة نقدية') + (t.fromCash ? ' (اتضافت على الخزنة)' : ' (من غير الخزنة)');
   return (t.note ? 'دفعة — ' + t.note : 'دفعة نقدية') + (t.fromCash ? '' : ' (من برّه الخزنة)');
 };
 function _supStatement(wb, s, f, all, sheetName){
   let run = 0, opening = null; const per = [];
   s.txns.slice().sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(t => {
     const before = run;
-    run += t.kind === 'goods' ? t.amount : -t.amount;
+    run += t.kind === 'payment' ? -t.amount : t.amount;
     if (f(t.date)) { if (opening === null) opening = before; per.push({ t, bal: r2(run) }); }
   });
   const rows = [];
   if (!all && opening !== null && Math.abs(opening) > 0.004)
     rows.push({ _open: true, _bold: true, _fill: 'FFEFE8D2', _nosum: true, kind: 'رصيد سابق', desc: 'رصيد مرحَّل قبل الفترة', bal: r2(opening) });
-  per.forEach((x, i) => rows.push({ n: i + 1, date: x.t.date, kind: x.t.kind === 'goods' ? 'بضاعة' : 'دفعة', desc: _supText(x.t),
-    debit: x.t.kind === 'goods' ? x.t.amount : null, credit: x.t.kind === 'payment' ? x.t.amount : null, bal: x.bal }));
-  const goods = per.filter(x => x.t.kind === 'goods').map(x => x.t), paid = per.filter(x => x.t.kind === 'payment').map(x => x.t);
+  per.forEach((x, i) => rows.push({ n: i + 1, date: x.t.date, kind: x.t.kind === 'goods' ? 'بضاعة' : (x.t.kind === 'advance' ? 'سلفة' : 'دفعة'), desc: _supText(x.t),
+    debit: x.t.kind === 'payment' ? null : x.t.amount, credit: x.t.kind === 'payment' ? x.t.amount : null, bal: x.bal }));
+  const goods = per.filter(x => x.t.kind === 'goods').map(x => x.t), adv = per.filter(x => x.t.kind === 'advance').map(x => x.t), paid = per.filter(x => x.t.kind === 'payment').map(x => x.t);
   const bal = supplierBalance(s);
   xlTable(wb, sheetName || 'كشف الحساب', {
     title: 'كشف حساب المورد: ' + s.name, subtitle: _sub(all),
     stats: [
       { label: 'إجمالي البضاعة', value: r2(sumBy(goods, t => t.amount)), color: XL.debit },
+      { label: 'سلف استلمتها', value: r2(sumBy(adv, t => t.amount)), color: XL.debit },
       { label: 'إجمالي المدفوع', value: r2(sumBy(paid, t => t.amount)), color: XL.credit },
       { label: bal > 0 ? 'المتبقي للمورد' : 'الرصيد الحالي', value: bal, color: _col(bal > 0.004) },
     ],
     cols: [
       { h: '#', k: 'n', w: 6, t: 'int' }, { h: 'التاريخ', k: 'date', w: 20, t: 'date' }, { h: 'النوع', k: 'kind', w: 12 },
       { h: 'البيان / تفاصيل الفاتورة', k: 'desc', w: 52, wrap: true },
-      { h: 'قيمة البضاعة', k: 'debit', w: 16, t: 'money', color: 'debit' },
+      { h: 'قيمة البضاعة / السلفة', k: 'debit', w: 20, t: 'money', color: 'debit' },
       { h: 'المدفوع للمورد (بيتخصم)', k: 'credit', w: 20, t: 'money', color: 'credit' },
       { h: 'المتبقي للمورد', k: 'bal', w: 18, t: 'money' },
     ],
@@ -307,13 +309,15 @@ function exportSuppliersAll(all){
   xlExport('حساب_كل_الموردين_' + _tag(all), (wb) => {
     const sum = state.suppliers.map((s, i) => ({ n: i + 1, who: s.name,
       goods: r2(sumBy(s.txns.filter(t => t.kind === 'goods' && f(t.date)), t => t.amount)),
+      adv: r2(sumBy(s.txns.filter(t => t.kind === 'advance' && f(t.date)), t => t.amount)),
       paid: r2(sumBy(s.txns.filter(t => t.kind === 'payment' && f(t.date)), t => t.amount)), bal: supplierBalance(s) }));
     xlTable(wb, 'ملخص الموردين', {
       title: 'ملخص حسابات الموردين', subtitle: _sub(all),
       stats: [{ label: 'عدد الموردين', value: state.suppliers.length, fmt: '0' }, { label: 'إجمالي المطلوب للموردين', value: r2(sumBy(state.suppliers, supplierBalance)), color: XL.debit }],
       cols: [{ h: '#', k: 'n', w: 6, t: 'int' }, { h: 'المورد', k: 'who', w: 26 }, { h: 'إجمالي البضاعة', k: 'goods', w: 17, t: 'money', color: 'debit' },
+        { h: 'سلف استلمتها', k: 'adv', w: 16, t: 'money', color: 'debit' },
         { h: 'إجمالي المدفوع', k: 'paid', w: 17, t: 'money', color: 'credit' }, { h: 'المتبقي للمورد (الحالي)', k: 'bal', w: 22, t: 'money', color: 'sign' }],
-      rows: sum, total: { label: 'الإجمالي', labelKey: 'who', sums: ['goods', 'paid', 'bal'] },
+      rows: sum, total: { label: 'الإجمالي', labelKey: 'who', sums: ['goods', 'adv', 'paid', 'bal'] },
     });
     xlTable(wb, 'كل الفواتير', { title: 'كل فواتير الموردين (صف لكل فاتورة)', subtitle: _sub(all), cols: _supInvCols(true),
       rows: state.suppliers.flatMap(s => _supInvRows(s, f)), total: _supInvTotal() });
@@ -383,7 +387,7 @@ function exportCash(all){
   const rows = [];
   if (!all && opening !== null && Math.abs(opening) > 0.004)
     rows.push({ _open: true, _bold: true, _fill: 'FFEFE8D2', _nosum: true, src: 'رصيد سابق', who: 'رصيد مرحَّل قبل الفترة', bal: r2(opening) });
-  per.forEach((x, i) => rows.push({ n: i + 1, date: x.m.date, src: srcName[x.m.src], who: x.m.label, desc: x.m.detail || '',
+  per.forEach((x, i) => rows.push({ n: i + 1, date: x.m.date, src: (x.m.src === 'supplier' && x.m.dir === 'in') ? 'سلفة من مورد' : srcName[x.m.src], who: x.m.label, desc: x.m.detail || '',
     inn: x.m.dir === 'in' ? x.m.amount : null, out: x.m.dir === 'out' ? x.m.amount : null, bal: x.bal }));
   const byReason = {};
   per.filter(x => x.m.src === 'manual' && x.m.dir === 'out').forEach(x => { const k = (x.m.detail || 'بدون سبب').trim(); const a = (byReason[k] ||= { n: 0, t: 0 }); a.n++; a.t += x.m.amount; });

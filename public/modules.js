@@ -162,7 +162,7 @@ function runSearch(q){
     if (t.kind === 'goods') {
       const names = (t.items || []).map(x => x.productName + ' ×' + x.quantity).join('، ');
       if (has(names) || has(t.note) || amt(t.amount)) goods.push({t: s.name + ' — فاتورة بضاعة', s: names || t.note, a: fmt(t.amount) + ' ج', d: t.date, go: `goView('stock')`});
-    } else if (has(t.note) || amt(t.amount)) spay.push({t: s.name + ' — دفعة', s: t.note, a: fmt(t.amount) + ' ج', d: t.date, go: `openSupplier('${s.id}')`});
+    } else if (has(t.note) || amt(t.amount)) spay.push({t: s.name + (t.kind === 'advance' ? ' — سلفة منه' : ' — دفعة'), s: t.note, a: fmt(t.amount) + ' ج', d: t.date, go: `openSupplier('${s.id}')`});
   }));
   add('📦 فواتير الموردين', goods);
   add('💸 دفعات الموردين', spay);
@@ -312,10 +312,10 @@ async function deleteTodayPayment(clientId, payId){
 
 /* ================= الموردين ================= */
 function getSupplier(id){ return state.suppliers.find(s => s.id === id); }
-function supplierBalance(s){ // الموجب = احنا مديونين للمورد
-  const goods = sumBy(s.txns.filter(t => t.kind === 'goods'), t => t.amount);
+function supplierBalance(s){ // الموجب = احنا مديونين للمورد (بضاعة + سلف نقدية − اللي دفعناه)
+  const owedAdds = sumBy(s.txns.filter(t => t.kind === 'goods' || t.kind === 'advance'), t => t.amount);
   const paid = sumBy(s.txns.filter(t => t.kind === 'payment'), t => t.amount);
-  return r2(goods - paid);
+  return r2(owedAdds - paid);
 }
 // إجمالي تكلفة الفاتورة (بيع/ربح محفوظين في الداتابيز بس مش بيتعرضوا في حساب المورد)
 function invCalc(items){
@@ -353,7 +353,7 @@ function renderSuppliers(){
   const app = document.getElementById('app');
   const totalOwed = sumBy(state.suppliers, supplierBalance);
   const inv = [], pays = [];
-  state.suppliers.forEach(s => s.txns.forEach(t => { if (inRange(t.date)) (t.kind === 'goods' ? inv : pays).push({s, t}); }));
+  state.suppliers.forEach(s => s.txns.forEach(t => { if (inRange(t.date)) (t.kind === 'goods' || t.kind === 'advance' ? inv : pays).push({s, t}); }));
   inv.sort((a, b) => new Date(b.t.date) - new Date(a.t.date));
   const goodsTotal = sumBy(inv, x => x.t.amount), paidTotal = sumBy(pays, x => x.t.amount);
   app.innerHTML = `
@@ -456,6 +456,17 @@ function renderSupplierView(){
   </div>
 
   <div class="card">
+    <h2>💵 سلفة من المورد (فلوس استلمتها منه)</h2>
+    <div class="f-grid">
+      <div><label>المبلغ</label><input type="text" inputmode="decimal" autocomplete="off" id="aAmount" placeholder="ج"></div>
+      <div class="wide"><label>ملاحظة</label><input type="text" id="aNote" placeholder="اختياري"></div>
+      <div><label>&nbsp;</label><button class="btn btn-cheese" onclick="addSupplierAdvance()">تسجيل السلفة</button></div>
+    </div>
+    <label class="chk"><input type="checkbox" id="aToCash" checked> تتضاف على الخزنة (الفلوس دخلت الخزنة)</label>
+    <div class="stage-note">السلفة بتتحسب عليك للمورد (بتزوّد المتبقي له) وبتدخل الخزنة كـ «داخل».</div>
+  </div>
+
+  <div class="card">
     <h2>دفعت للمورد فلوس</h2>
     <div class="f-grid">
       <div><label>المبلغ</label><input type="text" inputmode="decimal" autocomplete="off" id="pAmount" placeholder="ج"></div>
@@ -550,13 +561,26 @@ async function addSupplierPayment(){
     showToast('اتسجلت الدفعة');
   } catch (e) {}
 }
+async function addSupplierAdvance(){
+  const s = getSupplier(currentSupplierId); if (!s) return;
+  const amount = num(document.getElementById('aAmount').value) || 0;
+  const note = document.getElementById('aNote').value;
+  if (amount <= 0) { showToast('اكتب مبلغ صحيح'); return; }
+  const toCash = document.getElementById('aToCash').checked;
+  try {
+    const json = await apiFetch('suppliers/' + s.id + '/txns', 'POST', { kind: 'advance', amount, note, fromCash: toCash, date: dateForNew() });
+    s.txns.push(json.txn);
+    renderSupplierView();
+    showToast(toCash ? 'اتسجّلت السلفة واتضافت على الخزنة' : 'اتسجّلت السلفة');
+  } catch (e) {}
+}
 // إجمالي البضاعة والمدفوع للفترة المختارة
 function updateSupplierStats(){
   const el = document.getElementById('supStats'); const s = getSupplier(currentSupplierId); if (!el || !s) return;
-  const goods = sumBy(s.txns.filter(t => t.kind === 'goods' && inRange(t.date)), t => t.amount);
-  const paid = sumBy(s.txns.filter(t => t.kind === 'payment' && inRange(t.date)), t => t.amount);
-  el.innerHTML = `<div><div class="n" style="color:var(--debit)">${fmt(goods)}</div><div class="l">إجمالي البضاعة — ${rangeLabel()}</div></div>
-    <div><div class="n" style="color:var(--credit)">${fmt(paid)}</div><div class="l">إجمالي المدفوع — ${rangeLabel()}</div></div>`;
+  const sum = (k) => sumBy(s.txns.filter(t => t.kind === k && inRange(t.date)), t => t.amount);
+  el.innerHTML = `<div><div class="n" style="color:var(--debit)">${fmt(sum('goods'))}</div><div class="l">إجمالي البضاعة — ${rangeLabel()}</div></div>
+    <div><div class="n" style="color:var(--debit)">${fmt(sum('advance'))}</div><div class="l">سلف استلمتها — ${rangeLabel()}</div></div>
+    <div><div class="n" style="color:var(--credit)">${fmt(sum('payment'))}</div><div class="l">إجمالي المدفوع — ${rangeLabel()}</div></div>`;
 }
 function renderSupplierHistory(){
   const box = document.getElementById('supHistory'); if (!box) return;
@@ -566,7 +590,14 @@ function renderSupplierHistory(){
   box.innerHTML = `
     <div class="stage-note" style="margin:0 0 10px;">المعروض: <b>${rangeLabel()}</b> —
       <a class="lnk" onclick="shiftWeek(-7)">→ ٧ أيام أقدم</a> • <a class="lnk" onclick="shiftWeek(7)">٧ أيام أحدث ←</a></div>
-    ${txns.length ? txns.map(t => t.kind === 'goods' ? supInvoiceCard(s, t, false) : `
+    ${txns.length ? txns.map(t => t.kind === 'goods' ? supInvoiceCard(s, t, false) : t.kind === 'advance' ? `
+      <div class="payment-line" style="background:#FBF3EF;">
+        <div><span class="tag item">سلفة</span> ${t.fromCash ? '<span class="chip" style="padding:1px 8px;font-size:11px;">اتضافت على الخزنة</span>' : '<span class="chip" style="padding:1px 8px;font-size:11px;">من غير الخزنة</span>'}
+          ${t.note ? `<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(t.note)}</div>` : ''}</div>
+        <div class="pl-side"><div class="pl-date">${fmtDateTime(t.date)}</div><div class="pl-act"><span class="amt-plus">+ ${fmt(t.amount)} ج</span>
+          <button class="edit-btn" onclick="editSupplierTxn('${s.id}','${t.id}')" title="تعديل">✎</button>
+          <button class="del-btn" onclick="deleteSupplierTxn('${s.id}','${t.id}')">✕</button></div></div>
+      </div>` : `
       <div class="payment-line">
         <div><span class="tag payment">دفعة</span>
           <div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(t.note)}${t.fromCash ? '' : ' (من برّه الخزنة)'}</div></div>
@@ -585,7 +616,7 @@ async function deleteSupplierTxn(supplierId, id){
     offerUndo(snap.kind === 'goods' ? 'اتمسحت فاتورة البضاعة' : 'اتمسحت الدفعة', async () => {
       const body = snap.kind === 'goods'
         ? { kind: 'goods', items: (snap.items || []).map(it => ({ productId: it.productId, productName: it.productName, quantity: it.quantity, unitCost: it.unitCost, sellPrice: it.sellPrice })), note: snap.note, date: snap.date }
-        : { kind: 'payment', amount: snap.amount, note: snap.note, fromCash: snap.fromCash, date: snap.date };
+        : { kind: snap.kind, amount: snap.amount, note: snap.note, fromCash: snap.fromCash, date: snap.date };
       const json = await apiFetch('suppliers/' + s.id + '/txns', 'POST', body);
       s.txns.push(json.txn);
       view === 'supplier' ? renderSupplierView() : render();
@@ -601,6 +632,8 @@ function cashMovements(){
   state.suppliers.forEach(s => s.txns.forEach(t => {
     if (t.kind === 'payment' && t.fromCash) list.push({
       id: t.id, date: t.date, dir: 'out', amount: t.amount, src: 'supplier', label: 'دفعة للمورد ' + s.name, detail: t.note || '' });
+    if (t.kind === 'advance' && t.fromCash) list.push({
+      id: t.id, date: t.date, dir: 'in', amount: t.amount, src: 'supplier', label: 'سلفة من المورد ' + s.name, detail: t.note || '' });
   }));
   state.cash.forEach(e => list.push({
     id: e.id, date: e.date, dir: e.type, amount: e.amount, src: 'manual',
