@@ -213,7 +213,7 @@ const _supText = (t) => {
     return (hasItems ? _supItemsText(t.items) : (t.note || 'بضاعة')) + ((hasItems && t.note) ? '\nملاحظة: ' + t.note : '');
   }
   if (t.kind === 'advance') return (t.note ? 'سلفة نقدية — ' + t.note : 'سلفة نقدية') + (t.fromCash ? ' (اتضافت على الخزنة)' : ' (من غير الخزنة)');
-  return (t.note ? 'دفعة — ' + t.note : 'دفعة نقدية') + (t.fromCash ? '' : ' (من برّه الخزنة)');
+  return (t.note ? 'دفعة — ' + t.note : 'دفعة نقدية') + (t.appliesTo === 'advance' ? ' [سداد سلفة]' : '') + (t.fromCash ? '' : ' (من برّه الخزنة)');
 };
 function _supStatement(wb, s, f, all, sheetName){
   let run = 0, opening = null; const per = [];

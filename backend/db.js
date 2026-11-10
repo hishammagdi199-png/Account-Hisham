@@ -119,6 +119,7 @@ async function _ensureSchema() {
         ALTER TABLE supplier_txns ADD CONSTRAINT supplier_txns_kind_check CHECK (kind IN ('goods','payment','advance'));
       END IF;
     END $$;
+    ALTER TABLE supplier_txns ADD COLUMN IF NOT EXISTS applies_to TEXT;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_excluded BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE invoices ADD COLUMN IF NOT EXISTS discount NUMERIC(12,2) NOT NULL DEFAULT 0;
     CREATE TABLE IF NOT EXISTS stock_adjust (
@@ -428,6 +429,7 @@ const mapTxn = (r) => ({
     amount: numOr0(r.amount),
     note: r.note || '',
     fromCash: r.from_cash !== false,
+    appliesTo: r.applies_to || null,
     items: r.items || null,
     date: new Date(r.date).toISOString(),
 });
@@ -455,7 +457,7 @@ async function deleteSupplier(id) {
     await ensureSchema();
     await getPool().query('DELETE FROM suppliers WHERE id=$1', [id]);
 }
-async function createSupplierTxn(supplierId, { kind, amount, note, fromCash, items, date }) {
+async function createSupplierTxn(supplierId, { kind, amount, note, fromCash, items, date, appliesTo }) {
     await ensureSchema();
     if (kind !== 'goods' && kind !== 'payment' && kind !== 'advance') throw new Error('نوع العملية غير صحيح');
     const pool = getPool();
@@ -483,8 +485,8 @@ async function createSupplierTxn(supplierId, { kind, amount, note, fromCash, ite
     }
     if (amt <= 0) throw new Error('المبلغ لازم يكون أكبر من صفر');
     const r = await pool.query(
-        'INSERT INTO supplier_txns (id, supplier_id, kind, amount, note, from_cash, items, date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
-        [randomUUID(), supplierId, kind, amt, note || '', fromCash !== false, itemsJson, pickDate(date).toISOString()]
+        'INSERT INTO supplier_txns (id, supplier_id, kind, amount, note, from_cash, items, date, applies_to) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
+        [randomUUID(), supplierId, kind, amt, note || '', fromCash !== false, itemsJson, pickDate(date).toISOString(), (kind === 'payment' && appliesTo === 'advance') ? 'advance' : null]
     );
     return mapTxn(r.rows[0]);
 }
@@ -582,7 +584,7 @@ async function updatePayment(id, { amount, note, date }) {
     const r = await updateRow('payments', id, sets);
     return { id: r.id, date: new Date(r.date).toISOString(), amount: numOr0(r.amount), note: r.note || '' };
 }
-async function updateSupplierTxn(id, { amount, note, fromCash, date }) {
+async function updateSupplierTxn(id, { amount, note, fromCash, date, appliesTo }) {
     await ensureSchema();
     const cur = await getPool().query('SELECT * FROM supplier_txns WHERE id=$1', [id]);
     if (!cur.rows[0]) throw new Error('العنصر مش موجود');
@@ -591,6 +593,7 @@ async function updateSupplierTxn(id, { amount, note, fromCash, date }) {
     if (amount !== undefined && !(cur.rows[0].kind === 'goods' && cur.rows[0].items)) sets.amount = checkAmount(amount);
     if (note !== undefined) sets.note = String(note);
     if (fromCash !== undefined && (cur.rows[0].kind === 'payment' || cur.rows[0].kind === 'advance')) sets.from_cash = !!fromCash;
+    if (appliesTo !== undefined && cur.rows[0].kind === 'payment') sets.applies_to = appliesTo === 'advance' ? 'advance' : null;
     if (date) sets.date = pickDate(date).toISOString();
     return mapTxn(await updateRow('supplier_txns', id, sets));
 }

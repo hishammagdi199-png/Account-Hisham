@@ -65,6 +65,7 @@ function editSupplierTxn(supplierId, txnId){
   if (hasItems) fields.push({ key: 'info', type: 'info', value: 'إجمالي الفاتورة ' + fmt(t.amount) + ' ج — الأصناف والأسعار ما تتعدّلش من هنا (احذف الفاتورة وأضفها من جديد لو عايز تغيّرها).' });
   else fields.push({ key: 'amount', label: 'المبلغ', type: 'num', value: t.amount });
   fields.push({ key: 'note', label: 'الملاحظة / البيان', type: 'area', value: t.note });
+  if (t.kind === 'payment') fields.push({ key: 'appliesTo', label: 'الدفعة دي لـ', type: 'select', value: t.appliesTo === 'advance' ? 'advance' : 'goods', options: [{ v: 'goods', l: 'دفعة على البضاعة' }, { v: 'advance', l: 'سداد سلفة' }] });
   if (t.kind === 'payment') fields.push({ key: 'fromCash', label: 'تتخصم من الخزنة', type: 'check', value: t.fromCash });
   if (t.kind === 'advance') fields.push({ key: 'fromCash', label: 'اتضافت على الخزنة (الفلوس دخلت الخزنة)', type: 'check', value: t.fromCash });
   fields.push({ key: 'day', label: 'التاريخ', type: 'date', value: localDateStr(t.date) });
@@ -72,6 +73,7 @@ function editSupplierTxn(supplierId, txnId){
     const body = { note: v.note };
     if (!hasItems) { if (_badAmount(v.amount)) { showToast('اكتب مبلغ صحيح'); throw new Error('amount'); } body.amount = v.amount; }
     if (t.kind === 'payment' || t.kind === 'advance') body.fromCash = v.fromCash;
+    if (t.kind === 'payment') body.appliesTo = v.appliesTo;
     const dt = composeDate(v.day, t.date); if (dt) body.date = dt;
     const json = await apiFetch('supplier-txns/' + txnId, 'PUT', body);
     Object.assign(t, json.txn); render(); showToast('اتعدّلت العملية');

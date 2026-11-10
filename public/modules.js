@@ -455,26 +455,8 @@ function renderSupplierView(){
     <div id="sdList"></div>
   </div>
 
-  <div class="card">
-    <h2>💵 سلفة من المورد (فلوس استلمتها منه)</h2>
-    <div class="f-grid">
-      <div><label>المبلغ</label><input type="text" inputmode="decimal" autocomplete="off" id="aAmount" placeholder="ج"></div>
-      <div class="wide"><label>ملاحظة</label><input type="text" id="aNote" placeholder="اختياري"></div>
-      <div><label>&nbsp;</label><button class="btn btn-cheese" onclick="addSupplierAdvance()">تسجيل السلفة</button></div>
-    </div>
-    <label class="chk"><input type="checkbox" id="aToCash" checked> تتضاف على الخزنة (الفلوس دخلت الخزنة)</label>
-    <div class="stage-note">السلفة بتتحسب عليك للمورد (بتزوّد المتبقي له) وبتدخل الخزنة كـ «داخل».</div>
-  </div>
-
-  <div class="card">
-    <h2>دفعت للمورد فلوس</h2>
-    <div class="f-grid">
-      <div><label>المبلغ</label><input type="text" inputmode="decimal" autocomplete="off" id="pAmount" placeholder="ج"></div>
-      <div class="wide"><label>ملاحظة</label><input type="text" id="pNote" placeholder="اختياري"></div>
-      <div><label>&nbsp;</label><button class="btn btn-credit" onclick="addSupplierPayment()">تسجيل الدفعة</button></div>
-    </div>
-    <label class="chk"><input type="checkbox" id="pFromCash" checked> تتخصم من الخزنة</label>
-  </div>
+  <div id="supMoveHolder"></div>
+  <div id="supAdvHolder"></div>
 
   <div class="card">
     <h2>سجل المورد</h2>
@@ -482,6 +464,8 @@ function renderSupplierView(){
   </div>`;
   if (state.products.length) { onSupProductChange(); }
   renderSupDraft();
+  renderSupMove();
+  renderSupAdvances();
   renderSupplierHistory();
 }
 function onSupProductChange(){
@@ -548,31 +532,80 @@ async function saveSupInvoice(){
     showToast('اتحفظت — هتتحسب في تبويب البضاعة');
   } catch (e) {}
 }
-async function addSupplierPayment(){
+/* ---------- سلفة / دفع مع المورد في كارت واحد ---------- */
+let supMode = 'payment';   // payment = دفعت له | advance = سلفة منه
+// السلف اللي لسه ما اتسددتش: الدفعات المعلّمة «سداد سلفة» بتتوزّع على أقدم سلفة الأول، والسلفة اللي تتسدد خالص بتتشال من القايمة
+function supplierAdvanceState(s){
+  const adv = s.txns.filter(t => t.kind === 'advance').sort((a, b) => new Date(a.date) - new Date(b.date));
+  let pool = sumBy(s.txns.filter(t => t.kind === 'payment' && t.appliesTo === 'advance'), t => t.amount);
+  const open = []; let remaining = 0;
+  adv.forEach(a => {
+    const used = Math.min(a.amount, pool); pool -= used;
+    const rem = r2(a.amount - used);
+    if (rem > 0.004) { open.push({ t: a, remaining: rem }); remaining += rem; }
+  });
+  return { open, remaining: r2(remaining), extra: r2(pool) };
+}
+function renderSupMove(){
+  const holder = document.getElementById('supMoveHolder'); const s = getSupplier(currentSupplierId); if (!holder || !s) return;
+  const st = supplierAdvanceState(s), isAdv = supMode === 'advance';
+  holder.innerHTML = `<div class="card">
+    <h2>تسجيل حركة مع المورد</h2>
+    <div class="seg">
+      <button class="${isAdv ? 'on in' : ''}" onclick="supMode='advance';renderSupMove()">💵 سلفة منه (استلمت فلوس)</button>
+      <button class="${!isAdv ? 'on out' : ''}" onclick="supMode='payment';renderSupMove()">⬆️ دفعت له</button>
+    </div>
+    <div class="f-grid">
+      <div><label>المبلغ</label><input type="text" inputmode="decimal" autocomplete="off" id="smAmount" placeholder="ج"></div>
+      <div class="wide"><label>ملاحظة</label><input type="text" id="smNote" placeholder="اختياري" onkeydown="if(event.key==='Enter')addSupplierMove()"></div>
+      <div><label>&nbsp;</label><button class="btn ${isAdv ? 'btn-cheese' : 'btn-credit'}" onclick="addSupplierMove()">${isAdv ? 'تسجيل السلفة' : 'تسجيل الدفعة'}</button></div>
+    </div>
+    ${isAdv
+      ? `<label class="chk"><input type="checkbox" id="smCash" checked> تتضاف على الخزنة (الفلوس دخلت الخزنة)</label>
+         <div class="stage-note">السلفة بتتحسب عليك للمورد وبتفضل ظاهرة تحت لحد ما تسدّدها.</div>`
+      : `<label class="chk"><input type="checkbox" id="smCash" checked> تتخصم من الخزنة</label>
+         ${st.remaining > 0 ? `<div class="lb-opts" style="margin-top:10px;">
+           <label class="lb-opt on"><input type="radio" name="smTarget" value="advance" checked onchange="this.closest('.lb-opts').querySelectorAll('.lb-opt').forEach(l=>l.classList.toggle('on',l.querySelector('input').checked))"> سداد سلفة (متبقي عليك ${fmt(st.remaining)} ج)</label>
+           <label class="lb-opt"><input type="radio" name="smTarget" value="goods" onchange="this.closest('.lb-opts').querySelectorAll('.lb-opt').forEach(l=>l.classList.toggle('on',l.querySelector('input').checked))"> دفعة على البضاعة</label></div>` : ''}`}
+  </div>`;
+}
+async function addSupplierMove(){
   const s = getSupplier(currentSupplierId); if (!s) return;
-  const amount = num(document.getElementById('pAmount').value) || 0;
-  const note = document.getElementById('pNote').value;
+  const amount = num(document.getElementById('smAmount').value) || 0;
+  const note = document.getElementById('smNote').value;
   if (amount <= 0) { showToast('اكتب مبلغ صحيح'); return; }
-  const fromCash = document.getElementById('pFromCash').checked;
+  const cash = document.getElementById('smCash').checked;
+  const isAdv = supMode === 'advance';
+  const target = document.querySelector('input[name="smTarget"]:checked');
+  const body = { kind: isAdv ? 'advance' : 'payment', amount, note, fromCash: cash, date: dateForNew() };
+  if (!isAdv && target && target.value === 'advance') body.appliesTo = 'advance';
   try {
-    const json = await apiFetch('suppliers/' + s.id + '/txns', 'POST', { kind: 'payment', amount, note, fromCash, date: dateForNew() });
+    const json = await apiFetch('suppliers/' + s.id + '/txns', 'POST', body);
     s.txns.push(json.txn);
     renderSupplierView();
-    showToast('اتسجلت الدفعة');
+    const left = supplierAdvanceState(s).remaining;
+    showToast(isAdv ? (cash ? 'اتسجّلت السلفة واتضافت على الخزنة' : 'اتسجّلت السلفة')
+      : (body.appliesTo ? (left > 0 ? 'اتسجّل السداد — لسه عليك سلف ' + fmt(left) + ' ج' : 'السلفة اتسدّدت خالص ✓') : 'اتسجّلت الدفعة'));
   } catch (e) {}
 }
-async function addSupplierAdvance(){
-  const s = getSupplier(currentSupplierId); if (!s) return;
-  const amount = num(document.getElementById('aAmount').value) || 0;
-  const note = document.getElementById('aNote').value;
-  if (amount <= 0) { showToast('اكتب مبلغ صحيح'); return; }
-  const toCash = document.getElementById('aToCash').checked;
-  try {
-    const json = await apiFetch('suppliers/' + s.id + '/txns', 'POST', { kind: 'advance', amount, note, fromCash: toCash, date: dateForNew() });
-    s.txns.push(json.txn);
-    renderSupplierView();
-    showToast(toCash ? 'اتسجّلت السلفة واتضافت على الخزنة' : 'اتسجّلت السلفة');
-  } catch (e) {}
+// كارت «السلف عند المورد»: بيفضل لحد ما السلفة تتسدد، وبعدها بيختفي
+function renderSupAdvances(){
+  const holder = document.getElementById('supAdvHolder'); const s = getSupplier(currentSupplierId); if (!holder || !s) return;
+  const st = supplierAdvanceState(s);
+  if (!st.open.length && !(st.extra > 0)) { holder.innerHTML = ''; return; }
+  holder.innerHTML = `<div class="card">
+    <div class="top-bar"><h2 style="border:none;margin:0;">💵 السلف عند المورد</h2>
+      <div style="text-align:left;"><div style="font-size:11.5px;color:var(--ink-soft);">لسه عليك</div><div class="amount owe" style="font-size:22px;">${fmt(st.remaining)} ج</div></div></div>
+    ${st.open.map(x => `<div class="payment-line" style="background:#FBF3EF;">
+      <div><span class="tag item">سلفة</span>${x.remaining < x.t.amount - 0.004 ? ` <span class="chip" style="padding:1px 8px;font-size:11px;">اتسدّد منها ${fmt(r2(x.t.amount - x.remaining))} من ${fmt(x.t.amount)}</span>` : ''}
+        ${x.t.fromCash ? '' : ' <span class="chip" style="padding:1px 8px;font-size:11px;">من غير الخزنة</span>'}
+        ${x.t.note ? `<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(x.t.note)}</div>` : ''}</div>
+      <div class="pl-side"><div class="pl-date">${fmtDateTime(x.t.date)}</div><div class="pl-act"><span class="amt-plus">${fmt(x.remaining)} ج</span>
+        <button class="edit-btn" onclick="editSupplierTxn('${s.id}','${x.t.id}')" title="تعديل">✎</button>
+        <button class="del-btn" onclick="deleteSupplierTxn('${s.id}','${x.t.id}')">✕</button></div></div></div>`).join('')}
+    ${st.extra > 0 ? `<div class="stage-note">دفعت زيادة ${fmt(st.extra)} ج عن السلف المسجّلة.</div>` : ''}
+    <div class="stage-note">السلفة بتفضل هنا لحد ما تسدّدها (من «دفعت له» ← سداد سلفة)، وبعدها بتتشال لوحدها. والحركات كلها في سجل المورد تحت.</div>
+  </div>`;
 }
 // إجمالي البضاعة والمدفوع للفترة المختارة
 function updateSupplierStats(){
@@ -599,7 +632,7 @@ function renderSupplierHistory(){
           <button class="del-btn" onclick="deleteSupplierTxn('${s.id}','${t.id}')">✕</button></div></div>
       </div>` : `
       <div class="payment-line">
-        <div><span class="tag payment">دفعة</span>
+        <div><span class="tag payment">دفعة</span>${t.appliesTo === 'advance' ? ' <span class="chip" style="padding:1px 8px;font-size:11px;">سداد سلفة</span>' : ''}
           <div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(t.note)}${t.fromCash ? '' : ' (من برّه الخزنة)'}</div></div>
         <div class="pl-side"><div class="pl-date">${fmtDateTime(t.date)}</div><div class="pl-act"><span class="amt-minus">- ${fmt(t.amount)} ج</span>
           <button class="edit-btn" onclick="editSupplierTxn('${s.id}','${t.id}')" title="تعديل">✎</button>
@@ -616,7 +649,7 @@ async function deleteSupplierTxn(supplierId, id){
     offerUndo(snap.kind === 'goods' ? 'اتمسحت فاتورة البضاعة' : 'اتمسحت الدفعة', async () => {
       const body = snap.kind === 'goods'
         ? { kind: 'goods', items: (snap.items || []).map(it => ({ productId: it.productId, productName: it.productName, quantity: it.quantity, unitCost: it.unitCost, sellPrice: it.sellPrice })), note: snap.note, date: snap.date }
-        : { kind: snap.kind, amount: snap.amount, note: snap.note, fromCash: snap.fromCash, date: snap.date };
+        : { kind: snap.kind, amount: snap.amount, note: snap.note, fromCash: snap.fromCash, date: snap.date, appliesTo: snap.appliesTo || undefined };
       const json = await apiFetch('suppliers/' + s.id + '/txns', 'POST', body);
       s.txns.push(json.txn);
       view === 'supplier' ? renderSupplierView() : render();
