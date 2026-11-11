@@ -612,7 +612,6 @@ function updateSupplierStats(){
   const el = document.getElementById('supStats'); const s = getSupplier(currentSupplierId); if (!el || !s) return;
   const sum = (k) => sumBy(s.txns.filter(t => t.kind === k && inRange(t.date)), t => t.amount);
   el.innerHTML = `<div><div class="n" style="color:var(--debit)">${fmt(sum('goods'))}</div><div class="l">إجمالي البضاعة — ${rangeLabel()}</div></div>
-    <div><div class="n" style="color:var(--debit)">${fmt(sum('advance'))}</div><div class="l">سلف استلمتها — ${rangeLabel()}</div></div>
     <div><div class="n" style="color:var(--credit)">${fmt(sum('payment'))}</div><div class="l">إجمالي المدفوع — ${rangeLabel()}</div></div>`;
 }
 function renderSupplierHistory(){
