@@ -2,8 +2,9 @@
    إضافات فوق النسخة الحالية (من غير ما نلمس الملفات الكبيرة):
    1) مرتجع من العميل / مرتجع للمورد — بيتخصم من الحساب ومبيأثرش على الخزنة
    2) تعديل فاتورة المورد كاملة (الأصناف والكميات والأسعار والتاريخ)
-   3) اختيار عميل تاني من جوه صفحة العميل
+   3) اختيار عميل تاني من جوه صفحة العميل (تحت شريط التاريخ)
    4) تحصيل مع الفاتورة + تحصيل من غير فاتورة (زرار فوق)
+   5) صفحة العميل من غير كارت واتساب ولا كارت «تسجيل دفعة»
    لازم يتحمّل بعد باقي ملفات الـ JS (آخر سطر في index.html)
 */
 
@@ -13,7 +14,9 @@
     '.tag.ret{background:#E1EAF6;color:#2F5D8C;}',
     '.ret-card{border-color:#BCD0EA;background:#F5F8FD;}',
     '.qa-bar{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px;}',
-    '.fx-client-pick{width:auto;flex:1;min-width:180px;max-width:340px;font-weight:700;}',
+    '.fx-client-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px;}',
+    '.fx-client-row label{margin:0;font-weight:700;white-space:nowrap;}',
+    '.fx-client-pick{width:auto;flex:1;min-width:200px;max-width:380px;font-weight:700;}',
     '.fx-pay{margin-top:10px;max-width:420px;}',
     '.fx-pay-note{font-weight:700;margin:6px 0 0;}',
   ].join('\n');
@@ -437,16 +440,17 @@ fxWrap('updateSupplierStats', function(orig, args){
 /* ---------- 4) صفحة العميل: اختيار عميل تاني + أزرار سريعة (تحصيل / مرتجع) ---------- */
 function fxClientSelect(client){
   const list = state.clients.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'ar'));
-  return `<select class="fx-client-pick" onchange="if(this.value)openClient(this.value)" title="افتح حساب عميل تاني">
+  return `<div class="fx-client-row"><label>👤 افتح حساب عميل تاني:</label>
+    <select class="fx-client-pick" onchange="if(this.value)openClient(this.value)" title="افتح حساب عميل تاني">
     ${list.map((c) => { const b = clientBalance(c);
       return `<option value="${c.id}" ${c.id === client.id ? 'selected' : ''}>${esc(c.name)} — ${fmt(Math.abs(b))} ج${b > 0.004 ? ' عليه' : (b < -0.004 ? ' له' : '')}</option>`; }).join('')}
-  </select>`;
+  </select></div>`;
 }
 function fxEnhanceClientView(){
   const client = getClient(currentClientId); const app = document.getElementById('app');
   if (!client || !app || !app.querySelector('.back-btn')) return;
-  const bar = app.querySelector('.top-bar');
-  if (bar && !bar.querySelector('.fx-client-pick')) bar.insertAdjacentHTML('beforeend', fxClientSelect(client));
+  const strip = document.getElementById('dateStrip');
+  if (strip && !app.querySelector('.fx-client-row')) strip.insertAdjacentHTML('afterend', fxClientSelect(client));
   const rec = app.querySelector('.receipt');
   const rets = clientReturnsOf(client.id);
   const ms = rec && rec.querySelector('.mini-stats');
@@ -454,7 +458,11 @@ function fxEnhanceClientView(){
   if (rec) rec.insertAdjacentHTML('afterend', `<div class="qa-bar">
     <button class="btn btn-credit" onclick="fxQuickCollect()">💵 تحصيل (من غير فاتورة)</button>
     <button class="btn btn-outline" onclick="addClientReturn(currentClientId)">↩️ مرتجع من العميل</button></div>`);
-  app.querySelectorAll('.card h2').forEach((h) => { if (h.textContent.trim().indexOf('تسجيل دفعة') === 0) h.textContent = 'تحصيل / دفعة من غير فاتورة (بتتخصم من الحساب)'; });
+  // شيل كارت «فاتورة جديدة من رسايل واتساب» وكارت «تسجيل دفعة» — التحصيل من غير فاتورة بقى من الزرار اللي فوق
+  app.querySelectorAll('.card h2').forEach((h) => {
+    const t = h.textContent.trim();
+    if (t.indexOf('فاتورة جديدة من رسايل واتساب') === 0 || t.indexOf('تسجيل دفعة') === 0) { const card = h.closest('.card'); if (card) card.remove(); }
+  });
 }
 fxWrap('renderClientView', function(orig, args){ orig.apply(this, args); fxEnhanceClientView(); });
 
