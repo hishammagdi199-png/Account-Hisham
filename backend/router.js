@@ -3,6 +3,7 @@
 // ودالة Vercel (api/[...path].js)، عشان نفس السلوك بالظبط في المكانين.
 
 const db = require('./db');
+const extras = require('./extras'); // المرتجعات + تعديل فاتورة المورد كاملة
 
 async function route(method, segments, body, pin) {
     const APP_PIN = process.env.APP_PIN;
@@ -29,6 +30,12 @@ async function route(method, segments, body, pin) {
         if (method === 'GET' && segments[0] === 'state' && segments.length === 1) {
             const state = await db.getFullState();
             return { status: 200, body: { data: state } };
+        }
+
+        // GET /api/extras — كل المرتجعات (عملاء + موردين)
+        if (method === 'GET' && segments[0] === 'extras' && segments.length === 1) {
+            const data = await extras.listReturns();
+            return { status: 200, body: { data } };
         }
 
         // POST /api/reset
@@ -76,6 +83,20 @@ async function route(method, segments, body, pin) {
                 const payment = await db.createPayment(segments[1], body || {});
                 return { status: 200, body: { payment } };
             }
+            if (method === 'POST' && segments.length === 3 && segments[2] === 'returns') {
+                const ret = await extras.createClientReturn(segments[1], body || {});
+                return { status: 200, body: { ret } };
+            }
+        }
+
+        // CLIENT RETURNS (مرتجع من العميل)
+        if (segments[0] === 'client-returns' && method === 'PUT' && segments.length === 2) {
+            const ret = await extras.updateClientReturn(segments[1], body || {});
+            return { status: 200, body: { ret } };
+        }
+        if (segments[0] === 'client-returns' && method === 'DELETE' && segments.length === 2) {
+            await extras.deleteClientReturn(segments[1]);
+            return { status: 200, body: { ok: true } };
         }
 
         // INVOICES
@@ -116,9 +137,27 @@ async function route(method, segments, body, pin) {
                 const txn = await db.createSupplierTxn(segments[1], body || {});
                 return { status: 200, body: { txn } };
             }
+            if (method === 'POST' && segments.length === 3 && segments[2] === 'returns') {
+                const ret = await extras.createSupplierReturn(segments[1], body || {});
+                return { status: 200, body: { ret } };
+            }
         }
+
+        // SUPPLIER RETURNS (مرتجع للمورد)
+        if (segments[0] === 'supplier-returns' && method === 'PUT' && segments.length === 2) {
+            const ret = await extras.updateSupplierReturn(segments[1], body || {});
+            return { status: 200, body: { ret } };
+        }
+        if (segments[0] === 'supplier-returns' && method === 'DELETE' && segments.length === 2) {
+            await extras.deleteSupplierReturn(segments[1]);
+            return { status: 200, body: { ok: true } };
+        }
+
         if (segments[0] === 'supplier-txns' && method === 'PUT' && segments.length === 2) {
-            const txn = await db.updateSupplierTxn(segments[1], body || {});
+            // لو الطلب فيه items => تعديل فاتورة البضاعة كاملة (أصناف / كميات / أسعار)
+            const txn = (body && Array.isArray(body.items))
+                ? await extras.updateSupplierInvoice(segments[1], body)
+                : await db.updateSupplierTxn(segments[1], body || {});
             return { status: 200, body: { txn } };
         }
         if (segments[0] === 'supplier-txns' && method === 'DELETE' && segments.length === 2) {
