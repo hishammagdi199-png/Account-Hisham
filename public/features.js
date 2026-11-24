@@ -5,6 +5,7 @@
    3) اختيار عميل تاني من جوه صفحة العميل (تحت شريط التاريخ)
    4) تحصيل مع الفاتورة + تحصيل من غير فاتورة (زرار فوق)
    5) صفحة العميل من غير كارت واتساب ولا كارت «تسجيل دفعة»
+   6) كروت بسهم تتفتح وتتقفل: «تسجيل حركة مع المورد» + «الأصناف والأسعار» + «العملاء» في الرئيسية
    لازم يتحمّل بعد باقي ملفات الـ JS (آخر سطر في index.html)
 */
 
@@ -17,6 +18,8 @@
     '.fx-client-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px;}',
     '.fx-client-row label{margin:0;font-weight:700;white-space:nowrap;}',
     '.fx-client-pick{width:auto;flex:1;min-width:200px;max-width:380px;font-weight:700;}',
+    '.fx-collhead{cursor:pointer;user-select:none;}',
+    '.fx-arrow{display:inline-block;width:16px;margin-left:6px;font-size:12px;color:var(--ink-soft);}',
     '.fx-pay{margin-top:10px;max-width:420px;}',
     '.fx-pay-note{font-weight:700;margin:6px 0 0;}',
   ].join('\n');
@@ -679,6 +682,46 @@ function _supStatement(wb, s, f, all, sheetName){
     total: { label: 'الإجمالي', labelKey: 'desc', sums: ['debit', 'credit'], balKey: true },
   });
 }
+
+
+/* ---------- 6) كروت بتتفتح وتتقفل بسهم (الاختيار بيتحفظ على الجهاز) ---------- */
+let FXCOLL = {};
+try { FXCOLL = JSON.parse(localStorage.getItem('fx_coll') || '{}') || {}; } catch (e) { FXCOLL = {}; }
+function fxSaveColl(){ try { localStorage.setItem('fx_coll', JSON.stringify(FXCOLL)); } catch (e) {} }
+function fxCollapsed(key, dflt){ return Object.prototype.hasOwnProperty.call(FXCOLL, key) ? !!FXCOLL[key] : !!dflt; }
+function fxApplyColl(card, collapsed){
+  const head = card.firstElementChild; if (!head) return;
+  Array.from(card.children).forEach((ch) => { if (ch !== head) ch.style.display = collapsed ? 'none' : ''; });
+  const arrow = card.querySelector('.fx-arrow'); if (arrow) arrow.textContent = collapsed ? '◀' : '▼';
+}
+function fxMakeCollapsible(card, key, dflt){
+  if (!card || card.dataset.fxColl) return;
+  const head = card.firstElementChild; if (!head) return;
+  const h2 = head.tagName === 'H2' ? head : head.querySelector('h2'); if (!h2) return;
+  card.dataset.fxColl = key;
+  h2.insertAdjacentHTML('afterbegin', '<span class="fx-arrow"></span>');
+  head.classList.add('fx-collhead');
+  head.addEventListener('click', (e) => {
+    if (e.target.closest('button, a, input, select, label, [contenteditable]')) return;
+    const now = !fxCollapsed(key, dflt);
+    FXCOLL[key] = now; fxSaveColl(); fxApplyColl(card, now);
+  });
+  fxApplyColl(card, fxCollapsed(key, dflt));
+}
+function fxCardByTitle(title){
+  const hs = document.querySelectorAll('#app .card h2');
+  for (const h of hs) { if (h.textContent.replace(/^[▼◀]\s*/, '').trim() === title) return h.closest('.card'); }
+  return null;
+}
+fxWrap('renderHome', function(orig, args){
+  orig.apply(this, args);
+  fxMakeCollapsible(fxCardByTitle('الأصناف والأسعار'), 'home_products', true);   // مقفول من الأول
+  fxMakeCollapsible(fxCardByTitle('العملاء'), 'home_clients', false);             // مفتوح من الأول
+});
+fxWrap('renderSupMove', function(orig, args){
+  orig.apply(this, args);
+  fxMakeCollapsible(fxCardByTitle('تسجيل حركة مع المورد'), 'sup_move', true);     // مقفول من الأول
+});
 
 /* ---------- تشغيل: تحميل المرتجعات أول ما الصفحة تفتح ---------- */
 loadExtras().then(() => { if (fxRendered) render(); }).catch((e) => { showLoadError(e); });
