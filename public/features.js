@@ -6,6 +6,7 @@
    4) تحصيل مع الفاتورة + تحصيل من غير فاتورة (زرار فوق)
    5) صفحة العميل من غير كارت واتساب ولا كارت «تسجيل دفعة»
    6) كروت بسهم تتفتح وتتقفل: «تسجيل حركة مع المورد» + «الأصناف والأسعار» + «العملاء» في الرئيسية
+   7) اختيار الفترة بقايمة (اليوم / أسبوع / شهر / الكل) + بحث الخزنة بيجمّع الإجمالي والعدد حسب الفترة
    لازم يتحمّل بعد باقي ملفات الـ JS (آخر سطر في index.html)
 */
 
@@ -18,6 +19,7 @@
     '.fx-client-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px;}',
     '.fx-client-row label{margin:0;font-weight:700;white-space:nowrap;}',
     '.fx-client-pick{width:auto;flex:1;min-width:200px;max-width:380px;font-weight:700;}',
+    '.fx-period{width:auto;min-width:120px;font-weight:700;}',
     '.fx-collhead{cursor:pointer;user-select:none;}',
     '.fx-arrow{display:inline-block;width:16px;margin-left:6px;font-size:12px;color:var(--ink-soft);}',
     '.fx-pay{margin-top:10px;max-width:420px;}',
@@ -722,6 +724,127 @@ fxWrap('renderSupMove', function(orig, args){
   orig.apply(this, args);
   fxMakeCollapsible(fxCardByTitle('تسجيل حركة مع المورد'), 'sup_move', true);     // مقفول من الأول
 });
+
+
+/* =====================================================================
+   7) اختيار الفترة (اليوم / أسبوع / شهر / الكل) + بحث الخزنة بالإجمالي
+   ===================================================================== */
+function fxMonthBounds(dateStr){
+  const [y, m] = dateStr.split('-').map(Number);
+  return [y + '-' + pad2(m) + '-01', localDateStr(new Date(y, m, 0))];
+}
+function rangeBounds(){
+  if (selMode === 'day') return [selDate, selDate];
+  if (selMode === 'week') return [addDays(winEnd, -6), winEnd];
+  if (selMode === 'month') return fxMonthBounds(winEnd);   // الشهر اللي فيه آخر يوم في الشريط
+  return null;
+}
+function rangeLabel(){
+  if (selMode === 'all') return 'كل الفترات';
+  if (selMode === 'month') { const [y, m] = winEnd.split('-').map(Number); return 'شهر ' + new Date(y, m - 1, 1).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }); }
+  if (selMode === 'week') { const b = rangeBounds(); return 'الأسبوع (' + fmtDay(b[0], { day: 'numeric', month: 'short' }) + ' → ' + fmtDay(b[1], { day: 'numeric', month: 'short' }) + ')'; }
+  return selDate === todayStr() ? 'النهاردة' : fmtDay(selDate);
+}
+// الأسهم: في وضع «شهر» بتنقل شهر كامل، وغير كده أسبوع
+function shiftWin(n){
+  if (selMode === 'month') {
+    const [y, m, d] = winEnd.split('-').map(Number);
+    const t = new Date(y, m - 1 + (n > 0 ? 1 : -1), 1);
+    const last = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+    winEnd = localDateStr(new Date(t.getFullYear(), t.getMonth(), Math.min(d, last)));
+    afterDateChange(); return;
+  }
+  winEnd = addDays(winEnd, n); if (selMode === 'day') selDate = addDays(selDate, n); afterDateChange();
+}
+// فتح مورد: ميغيّرش اختيارك (شهر / الكل) — بس لو كنت على يوم واحد بيعرض الأسبوع
+function openSupplier(id){ currentSupplierId = id; view = 'supplier'; supDraft = []; supDraftNote = ''; searchQ = ''; if (selMode === 'day') selMode = 'week'; render(); }
+
+function fxSetPeriod(v){
+  if (v === 'today') goToday();
+  else if (v === 'week' || v === 'month' || v === 'all') setMode(v);
+}
+function dateStripInner(){
+  const days = []; for (let i = 6; i >= 0; i--) days.push(addDays(winEnd, -i));
+  const note = view === 'suppliers' || view === 'supplier' ? 'بضاعة وردت' : (view === 'cash' || view === 'personal' ? 'صافي الحركة' : 'تحصيل');
+  const b = rangeBounds();
+  const cur = selMode === 'all' ? 'all' : (selMode === 'week' ? 'week' : (selMode === 'month' ? 'month' : (selDate === todayStr() ? 'today' : 'day')));
+  const mo = selMode === 'month';
+  return `
+    <div class="ds-row">
+      <button class="ds-arrow" onclick="shiftWin(-7)" title="${mo ? 'الشهر اللي قبله' : 'الأسبوع اللي قبله'}">→</button>
+      <div class="ds-days">${days.map((d) => {
+        const bd = dayBadge(d);
+        const on = selMode === 'day' && selDate === d;
+        const inWk = selMode === 'week' || (mo && b && d >= b[0] && d <= b[1]);
+        return `<button class="ds-day ${on ? 'on' : ''} ${inWk ? 'inwk' : ''} ${d === todayStr() ? 'today' : ''}" onclick="setDay('${d}')">
+          <span class="w">${fmtDay(d, { weekday: 'short' })}</span><span class="n">${fmtDay(d, { day: 'numeric' })}</span>
+          <span class="b ${bd ? bd.cls : ''}">${bd ? bd.text : '·'}</span></button>`;
+      }).join('')}</div>
+      <button class="ds-arrow" onclick="shiftWin(7)" title="${mo ? 'الشهر اللي بعده' : 'الأسبوع اللي بعده'}">←</button>
+    </div>
+    <div class="ds-ctrl">
+      <input type="date" value="${selDate}" onchange="pickDateInput(this.value)" title="اختار تاريخ (في الموردين بيعرض ٧ أيام لحد التاريخ ده)">
+      <select class="fx-period" onchange="fxSetPeriod(this.value)" title="الفترة اللي تتعرض">
+        ${cur === 'day' ? `<option value="day" selected>يوم: ${esc(fmtDay(selDate, { day: 'numeric', month: 'short' }))}</option>` : ''}
+        <option value="today" ${cur === 'today' ? 'selected' : ''}>اليوم</option>
+        <option value="week" ${cur === 'week' ? 'selected' : ''}>أسبوع</option>
+        <option value="month" ${cur === 'month' ? 'selected' : ''}>شهر</option>
+        <option value="all" ${cur === 'all' ? 'selected' : ''}>الكل</option>
+      </select>
+      <span class="ds-hint">المعروض: <b>${rangeLabel()}</b> • (${note} تحت كل يوم) • العمليات الجديدة بتتسجل بتاريخ: <b>${fmtDay(localDateStr(dateForNew()), { weekday: 'long', day: 'numeric', month: 'numeric' })}</b></span>
+    </div>`;
+}
+
+/* ---------- بحث الخزنة: بيفلتر الحركات حسب الفترة المختارة ويجمّع الإجمالي والعدد جنب رصيد الخزنة ---------- */
+fxWrap('onSearchInput', function(orig, args){
+  if (view === 'cash') { searchQ = args[0]; renderCashList(); return; }
+  return orig.apply(this, args);
+});
+fxWrap('renderCash', function(orig, args){
+  orig.apply(this, args);
+  const i = document.getElementById('gSearch');
+  if (i) i.placeholder = '🔍 ابحث في الخزنة (جهة، سبب، مبلغ…) — الإجمالي والعدد بيظهروا جنب الرصيد';
+});
+function renderCashList(){
+  const box = document.getElementById('cashListBox'); if (!box) return;
+  const q0 = String(searchQ || '').trim();
+  const q = norm(q0);
+  const isNum = /^\d+(\.\d+)?$/.test(q);
+  const hit = (m) => !q || norm(m.label).includes(q) || norm(m.detail).includes(q) || (isNum && String(m.amount).includes(q));
+  const inRng = cashMovements().filter((m) => inRange(m.date));
+  const all = inRng.filter(hit);
+  const rows = cashFilter === 'all' ? all : all.filter((m) => m.dir === cashFilter);
+  const sum = sumBy(rows, (m) => m.amount);
+  const outs = all.filter((m) => m.dir === 'out'), ins = all.filter((m) => m.dir === 'in');
+  const totOut = r2(sumBy(outs, (m) => m.amount)), totIn = r2(sumBy(ins, (m) => m.amount));
+  // الأرقام اللي جنب رصيد الخزنة: بتتحول لإجمالي البحث لما تكتب في خانة البحث
+  const ms = document.querySelector('#app .receipt .mini-stats');
+  if (ms) ms.innerHTML = q
+    ? `<div><div class="n" style="color:var(--debit)">${fmt(totOut)}</div><div class="l">مصروف «${esc(q0)}» — ${outs.length} حركة</div></div>
+       <div><div class="n" style="color:var(--credit)">${fmt(totIn)}</div><div class="l">داخل — ${ins.length} حركة</div></div>`
+    : `<div><div class="n" style="color:var(--credit)">${fmt(totIn)}</div><div class="l">داخل — ${rangeLabel()}</div></div>
+       <div><div class="n" style="color:var(--debit)">${fmt(totOut)}</div><div class="l">خارج — ${rangeLabel()}</div></div>`;
+  const byReason = {};
+  rows.filter((m) => m.src === 'manual' && m.dir === 'out').forEach((m) => { const k = (m.detail || 'بدون سبب').trim(); byReason[k] = (byReason[k] || 0) + m.amount; });
+  const reasons = Object.entries(byReason).sort((a, b) => b[1] - a[1]);
+  const counts = { all: all.length, in: ins.length, out: outs.length };
+  box.innerHTML = filterChipsHtml(cashFilter, 'setCashFilter', counts) +
+    (q ? `<div class="stage-note" style="margin:0 0 10px;">نتيجة البحث عن «${esc(q0)}» في ${rangeLabel()}: <b>${all.length} حركة</b> • مصروف <b>${fmt(totOut)} ج</b> (${outs.length} حركة) • داخل <b>${fmt(totIn)} ج</b> (${ins.length} حركة)</div>` : '') +
+    (cashFilter !== 'all' ? `<div class="stage-note" style="margin:0 0 10px;">${cashFilter === 'in' ? 'إجمالي الإيداعات (الداخل)' : 'إجمالي المصروفات (الخارج)'}${q ? ' للبحث' : ''} في ${rangeLabel()}: <b>${fmt(sum)} ج</b> (${rows.length} حركة)</div>` : '') +
+    (reasons.length ? `<div class="chips">${reasons.map(([r, v]) => `<span class="chip">${esc(r)}: ${fmt(v)} ج</span>`).join('')}</div>` : '') +
+    (rows.length ? rows.map((m) => `
+      <div class="payment-line" style="background:${m.dir === 'in' ? '#F5FAF7' : '#FBF3EF'};">
+        <div>
+          <span class="tag ${m.dir === 'in' ? 'payment' : 'item'}">${m.dir === 'in' ? 'داخل' : 'خارج'}</span>
+          <b style="margin-right:6px;">${esc(m.label)}</b>${m.src !== 'manual' ? ' <span class="chip" style="padding:1px 8px;font-size:11px;">تلقائي</span>' : ''}
+          ${m.detail ? `<div class="pl-note" style="font-size:12.5px;color:var(--ink-soft);margin-top:4px;">${esc(m.detail)}</div>` : ''}
+        </div>
+        <div class="pl-side"><div class="pl-date">${fmtDateTime(m.date)}</div><div class="pl-act">
+          <span class="${m.dir === 'in' ? 'amt-minus' : 'amt-plus'}">${m.dir === 'in' ? '+' : '-'} ${fmt(m.amount)} ج</span>
+          ${m.src === 'manual' ? `<button class="edit-btn" onclick="editCashEntry('${m.id}')" title="تعديل">✎</button><button class="del-btn" onclick="deleteCashEntry('${m.id}')">✕</button>` : ''}
+        </div></div>
+      </div>`).join('') : `<div class="empty">${q ? 'مفيش حركات بتطابق البحث في الفترة دي' : 'مفيش ' + (cashFilter === 'in' ? 'إيداعات' : (cashFilter === 'out' ? 'مصروفات' : 'حركات')) + ' في الفترة دي'}</div>`);
+}
 
 /* ---------- تشغيل: تحميل المرتجعات أول ما الصفحة تفتح ---------- */
 loadExtras().then(() => { if (fxRendered) render(); }).catch((e) => { showLoadError(e); });
